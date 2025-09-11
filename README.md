@@ -2,16 +2,18 @@
 
 A tool for measuring and comparing battery life between FreeBSD and Linux configurations on laptops.
 
+![batlab logo](logo-256.png)
+
 ## Purpose
 
 FreeBSD laptop users often report poor battery life compared to Linux, but lack systematic data on properly tuned configurations. This tool enables researchers to:
 
 - **Measure battery efficiency** under different FreeBSD power management settings
-- **Compare against Linux baselines** on the same hardware  
+- **Compare against Linux baselines** on the same hardware
 - **Identify optimal FreeBSD configurations** that approach or exceed Linux battery life
 - **Build a dataset** of real-world laptop power management performance
 
-**Target hardware:** Any laptop  
+**Target hardware:** Any laptop
 **Primary focus:** FreeBSD power management research vs Linux
 
 ## Quick Start
@@ -26,7 +28,7 @@ batlab init
 # 3. Start logging (Terminal 1)
 batlab log freebsd-powerd-aggressive
 
-# 4. Run workload (Terminal 2) 
+# 4. Run workload (Terminal 2)
 batlab run idle
 
 # 5. Stop both with Ctrl+C when done
@@ -70,7 +72,7 @@ batlab init
 ```bash
 batlab init                      # Set up directories
 batlab log <config-name>         # Start logging (Terminal 1)
-batlab run <workload>            # Run workload (Terminal 2)  
+batlab run <workload>            # Run workload (Terminal 2)
 batlab report                    # View results
 batlab export --csv data.csv     # Export for analysis
 batlab list workloads            # See available workloads
@@ -86,7 +88,7 @@ batlab run idle    # In second terminal, run until low battery
 ```
 
 **FreeBSD comparison:**
-```bash  
+```bash
 # Configure FreeBSD power management manually
 sysctl hw.acpi.cpu.cx_lowest=C8
 powerd_flags="-a adaptive -b minimum"
@@ -108,7 +110,7 @@ batlab export --csv comparison.csv
 You choose descriptive names for your manual configurations:
 
 - `freebsd-default` - Stock FreeBSD installation
-- `freebsd-powerd-aggressive` - Minimum power settings  
+- `freebsd-powerd-aggressive` - Minimum power settings
 - `freebsd-c8-states` - Deep CPU sleep states
 - `linux-baseline` - Default Linux distribution
 - `linux-tlp-optimized` - TLP power optimization
@@ -133,7 +135,7 @@ Results stored in `data/` directory:
 
 - **FreeBSD vs Linux comparison** on identical hardware
 - **Power management optimization** - test different FreeBSD settings
-- **Workload analysis** - how different tasks affect battery life  
+- **Workload analysis** - how different tasks affect battery life
 - **Hardware characterization** - build database across laptop models
 - **Community contributions** - share results to improve FreeBSD power management
 
@@ -142,7 +144,7 @@ Results stored in `data/` directory:
 This tool is designed for the research community:
 
 - **Test different hardware** - submit results from your laptop model
-- **Add workloads** - create new test scenarios  
+- **Add workloads** - create new test scenarios
 - **Improve FreeBSD support** - enhance power management detection
 - **Share configurations** - document effective power settings
 
