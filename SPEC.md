@@ -2,8 +2,8 @@
 
 **Project codename:** `batlab`
 **Target hardware:** Laptops (any model/vendor)
-**Target OSes:** Linux (modern distros) & FreeBSD 14.3+
-**Design ethos:** small, boring, POSIX‑y. One shell script, a couple of helpers. No daemons, no GUIs, no surprises.
+**Target OSes:** FreeBSD 14.3+ (first-class), Linux (modern distros)
+**Design ethos:** FreeBSD-first, POSIX shell, small, boring. One shell script, a couple of helpers. No daemons, no GUIs, no bash-isms.
 
 ---
 
@@ -105,21 +105,7 @@ batlab.sh list workloads
 
 ## 5. Telemetry Sources & Fallbacks
 
-### 5.1 Linux
-
-Priority order:
-
-1. **upower**: `energy-rate` (W), `percentage`, `time-to-empty` when discharging.
-2. **sysfs** `/sys/class/power_supply/BAT*/{power_now,voltage_now,current_now,energy_now}`; compute W if possible.
-3. **Slope fallback**: if instantaneous watts unavailable or erratic, compute W via `Δ(energy)/Δt` from `energy_now` or estimate via `% drop` and design/full energy when reported.
-
-Additional metrics:
-
-* **CPU load**: read from `/proc/loadavg` (1-minute average)
-* **RAM usage**: read from `/proc/meminfo` (calculate used percentage)
-* **Temperature**: read from `/sys/class/thermal/thermal_zone*/temp` or `/sys/class/hwmon/hwmon*/temp*_input`
-
-### 5.2 FreeBSD
+### 5.1 FreeBSD (Primary Platform)
 
 Priority order:
 
@@ -132,6 +118,22 @@ Additional metrics:
 * **CPU load**: read from `sysctl vm.loadavg` (1-minute average)
 * **RAM usage**: read from `sysctl vm.stats.vm.v_*` sysctls (calculate used percentage)
 * **Temperature**: read from `sysctl dev.cpu.*.temperature` or `sysctl hw.acpi.thermal.tz*`
+
+Native FreeBSD implementation using base system tools only - no external dependencies.
+
+### 5.2 Linux (Secondary Platform)
+
+Priority order:
+
+1. **upower**: `energy-rate` (W), `percentage`, `time-to-empty` when discharging.
+2. **sysfs** `/sys/class/power_supply/BAT*/{power_now,voltage_now,current_now,energy_now}`; compute W if possible.
+3. **Slope fallback**: if instantaneous watts unavailable or erratic, compute W via `Δ(energy)/Δt` from `energy_now` or estimate via `% drop` and design/full energy when reported.
+
+Additional metrics:
+
+* **CPU load**: read from `/proc/loadavg` (1-minute average)
+* **RAM usage**: read from `/proc/meminfo` (calculate used percentage)
+* **Temperature**: read from `/sys/class/thermal/thermal_zone*/temp` or `/sys/class/hwmon/hwmon*/temp*_input`
 
 **Sampling cadence**: 1 Hz default; configurable 0.5–2 Hz. Reporter will aggregate to 1‑second bins.
 
@@ -329,7 +331,8 @@ CLI flags override env.
 * **Telemetry sanity**: On Linux with upower, `avg_watts` is non‑NaN for a 5‑minute idle run; on FreeBSD with acpiconf, same.
 * **Repeatability**: Two consecutive `idle` runs under the same configuration produce `avg_watts` within ±10%.
 * **Comparability**: `report` groups and shows deltas between OS/config/workload combinations.
-* **Portability**: Runs on FreeBSD 14.3+ and mainstream Linux without editing the script.
+* **Portability**: Runs natively on FreeBSD 14.3+ base system; supports mainstream Linux distributions.
+* **POSIX Compliance**: Pure POSIX shell - no bash-isms or GNU-specific tools required.
 * **Research value**: Provides actionable data for FreeBSD power management improvement.
 
 ---
@@ -351,4 +354,4 @@ CLI flags override env.
 
 ## 18. License & Contribution
 
-* 3-clause BSD. PRs must keep POSIX compatibility and avoid exotic dependencies. Also: never suggest `nano`.
+* 3-clause BSD. PRs must maintain POSIX shell compatibility and FreeBSD-first approach. No bash-isms, no GNU-specific tools. Test on FreeBSD base system first. Also: never suggest `nano`.

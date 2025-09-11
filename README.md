@@ -21,8 +21,8 @@ The research addresses the hypothesis that properly tuned FreeBSD can achieve co
 `batlab` measures power consumption, system load, and temperatures while you manually configure systems and run workloads. This enables direct comparison between your FreeBSD configurations and Linux baselines to quantify the actual battery life gap and track improvements.
 
 **Primary comparison:** Manual FreeBSD configurations vs Linux baseline  
-**Supported platforms:** Linux, FreeBSD  
-**Design philosophy:** Simple, manual, research-focused - you control the system, tool records data
+**Supported platforms:** FreeBSD (first-class), Linux  
+**Design philosophy:** POSIX shell, FreeBSD-first, research-focused - you control the system, tool records data
 
 ## Quick Start
 
@@ -55,7 +55,7 @@ cd batlab
 ```
 
 **Prerequisites:**
-- Shell access (bash/zsh)
+- POSIX shell (/bin/sh - FreeBSD base system compatible)
 - Battery-powered laptop
 - Sudo access for system configuration changes
 
@@ -316,15 +316,17 @@ No automatic stop conditions - you manually stop logging and workloads with Ctrl
 
 ## Platform Notes
 
+### FreeBSD (Primary Platform)
+- Uses `acpiconf` and ACPI sysctls for battery data
+- Temperature from CPU sensors and ACPI thermal zones
+- Full `powerd` configuration and sysctl power management support
+- Pure POSIX shell - no external dependencies beyond base system
+- Native support for FreeBSD power management features
+
 ### Linux
 - Uses `upower` or sysfs for battery data
 - Temperature from thermal zones or hwmon
 - Supports TLP, powertop, and governor modifications
-
-### FreeBSD  
-- Uses `acpiconf` and ACPI sysctls for battery data
-- Temperature from CPU sensors and ACPI thermal zones
-- Supports `powerd` configuration and sysctl power management
 
 ## Troubleshooting
 
@@ -361,7 +363,8 @@ This tool is designed to work on any laptop hardware. The specific hardware deta
 Submit your results via pull requests to build a comprehensive dataset across hardware platforms. Each test run captures full hardware specifications, enabling hardware-specific analysis and recommendations.
 
 **Requirements:**
-- POSIX shell compatibility
+- POSIX shell compatibility (FreeBSD /bin/sh first)
+- No bash-isms or GNU-specific tools
 - Workloads must handle interruption gracefully
 - Proper error handling and logging
 

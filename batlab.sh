@@ -7,7 +7,7 @@
 set -e
 
 VERSION="0.1.0"
-SCRIPT_DIR="$(dirname "$(readlink -f "$0" 2>/dev/null || realpath "$0")")"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DATA_DIR="${SCRIPT_DIR}/data"
 WORKLOAD_DIR="${SCRIPT_DIR}/workload"
 LIB_DIR="${SCRIPT_DIR}/lib"
@@ -119,7 +119,8 @@ check_battery() {
     case "$os_type" in
         Linux)
             if command -v upower >/dev/null 2>&1; then
-                if upower -i $(upower -e | grep 'BAT') 2>/dev/null | grep -q "state.*charging"; then
+                battery_path=$(upower -e | grep 'BAT' | head -1)
+                if [ -n "$battery_path" ] && upower -i "$battery_path" 2>/dev/null | grep -q "state.*charging"; then
                     log_warn "System appears to be charging - unplug AC adapter for accurate measurements"
                 fi
             fi
@@ -318,13 +319,14 @@ get_temperature() {
             fi
 
             # Try ACPI thermal zones
-            for tz in $(sysctl -N hw.acpi.thermal 2>/dev/null | grep temperature | head -1); do
-                temp=$(sysctl -n "$tz" 2>/dev/null | sed 's/C//' || echo "")
+            tz=$(sysctl -N hw.acpi.thermal 2>/dev/null | grep temperature | head -1)
+            if [ -n "$tz" ]; then
+                temp=$(sysctl -n "$tz" 2>/dev/null | sed 's/C$//' || echo "")
                 if [ -n "$temp" ]; then
                     echo "$temp"
                     return
                 fi
-            done
+            fi
 
             echo "0"
             ;;
@@ -336,7 +338,11 @@ get_temperature() {
 
 # Sample all telemetry and output JSON line
 sample_telemetry() {
-    os_type=$(uname -s | grep -q FreeBSD && echo "FreeBSD" || echo "Linux")
+    if uname -s | grep -q FreeBSD; then
+        os_type="FreeBSD"
+    else
+        os_type="Linux"
+    fi
     timestamp=$(get_timestamp)
 
     # Get battery info
@@ -701,7 +707,7 @@ cmd_export() {
             [ -f "$jsonl" ] || continue
 
             run_id=$(basename "$jsonl" .jsonl)
-            config=$(echo "$run_id" | cut -d_ -f4)
+            config=$(echo "$run_id" | rev | cut -d_ -f1 | rev)
             os=$(echo "$run_id" | cut -d_ -f3)
 
             if [ -f "$jsonl" ]; then
