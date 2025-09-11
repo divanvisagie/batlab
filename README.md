@@ -11,7 +11,7 @@ This tool was created to systematically measure and improve FreeBSD battery life
 - **Identify the best FreeBSD setup** that approaches or exceeds Linux battery life
 - **Fill the research gap** - many complaints about FreeBSD laptop battery life lack proper power tuning
 
-**Target hardware:** Lenovo ThinkPad X1 Carbon Gen 9  
+**Target hardware:** Laptops (any model/vendor)  
 **Focus:** FreeBSD 14.3+ power management vs mainstream Linux distributions
 
 The research addresses the hypothesis that properly tuned FreeBSD can achieve competitive battery life, but lacks systematic measurement and optimal configuration guidance.
@@ -349,6 +349,16 @@ sudo ./batlab.sh log config-name
 ## Contributing
 
 Workloads are modular - add new ones by creating files in `workload/` directory following the standard interface.
+
+### Hardware Diversity
+
+This tool is designed to work on any laptop hardware. The specific hardware details (model, CPU, battery specs) are automatically captured in the data files. We encourage testing on different hardware:
+
+- **Different laptop models**: ThinkPads, MacBooks, Dell XPS, Framework, etc.
+- **Different CPUs**: Intel, AMD, ARM-based systems
+- **Different battery technologies**: Various capacities and chemistries
+
+Submit your results via pull requests to build a comprehensive dataset across hardware platforms. Each test run captures full hardware specifications, enabling hardware-specific analysis and recommendations.
 
 **Requirements:**
 - POSIX shell compatibility

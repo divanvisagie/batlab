@@ -1,7 +1,7 @@
 # Battery Test Harness — SPEC
 
 **Project codename:** `batlab`
-**Target machine:** Lenovo ThinkPad X1 Carbon Gen 9 (Intel)
+**Target hardware:** Laptops (any model/vendor)
 **Target OSes:** Linux (modern distros) & FreeBSD 14.3+
 **Design ethos:** small, boring, POSIX‑y. One shell script, a couple of helpers. No daemons, no GUIs, no surprises.
 
@@ -13,7 +13,6 @@ We want to systematically measure and improve FreeBSD battery life on laptops, s
 
 The tool must capture telemetry while running workloads under manually configured power management settings, and produce comparable metrics to quantify the actual battery life gap between FreeBSD configurations and Linux baselines.
 
-**Target hardware:** Lenovo ThinkPad X1 Carbon Gen 9 (Intel)  
 **Primary research question:** Which FreeBSD configuration approaches Linux battery efficiency most closely, and under what workloads?
 
 ---
@@ -190,19 +189,20 @@ Each line:
 
 ```json
 {
-  "run_id": "2025-09-11T12:30:00Z_x1c9_FreeBSD_custom-config_web_idle",
+  "run_id": "2025-09-11T12:30:00Z_hostname_FreeBSD_custom-config_web_idle",
   "host": "$(hostname)",
-  "machine": "X1 Carbon Gen 9",
+  "machine": "$(dmidecode -s system-product-name)", 
+  "cpu": "$(sysctl -n hw.model)",
   "os": "FreeBSD 14.1-RELEASE",
-  "kernel": "...",
+  "kernel": "$(uname -r)",
   "config": "custom-config",
   "workload": "web_idle",
   "duration_s": 600,
   "sampling_hz": 1,
   "system_state": {
-    "before_config": { "sysctls": {...}, "processes": {...}, "hardware": {...} },
-    "after_config": { "sysctls": {...}, "processes": {...}, "hardware": {...} },
-    "changes": { "applied": [...], "failed": [...] }
+    "sysctls": {...},
+    "hardware": {...},
+    "processes": {...}
   },
   "battery": { "design_wh": 57.0, "full_wh": 53.2 },
   "custom_fields": {}
