@@ -11,7 +11,7 @@
 
 We want to systematically measure and improve FreeBSD battery life on laptops, specifically targeting the gap between FreeBSD and Linux power efficiency. The research addresses the hypothesis that properly tuned FreeBSD can achieve competitive battery life, but lacks systematic measurement and optimal configuration guidance.
 
-The tool must run workloads under different power management configurations, capture telemetry with complete system state, and produce comparable metrics to quantify the actual battery life gap between FreeBSD configurations and Linux baselines.
+The tool must capture telemetry while running workloads under manually configured power management settings, and produce comparable metrics to quantify the actual battery life gap between FreeBSD configurations and Linux baselines.
 
 **Target hardware:** Lenovo ThinkPad X1 Carbon Gen 9 (Intel)  
 **Primary research question:** Which FreeBSD configuration approaches Linux battery efficiency most closely, and under what workloads?
@@ -24,13 +24,13 @@ The tool must run workloads under different power management configurations, cap
 
 * Cross‑OS harness that:
 
-  * Applies arbitrary **configurations** (any system settings)
-  * Runs **workloads** (any command or script)
+  * Records manually applied **configurations** (user-defined names for system states)
+  * Runs **workloads** in separate process while logging telemetry
   * Samples battery telemetry and system state at a fixed cadence
-  * Emits structured logs with extensible metadata
-  * Produces comparable metrics across configurations
+  * Emits structured logs with configuration metadata
+  * Produces comparable metrics across manual configurations
 * Minimal dependencies; pure shell where possible.
-* Extensible configuration and data collection system.
+* Manual configuration approach - user sets up system state.
 * Easy export (CSV/JSON) and comparison across runs.
 
 ### 2.2 Non‑Goals
@@ -38,7 +38,7 @@ The tool must run workloads under different power management configurations, cap
 * Not a general battery diagnostics tool.
 * Not a background agent or automated scheduler.
 * No kernel patching or vendor firmware juggling.
-* No automatic environment setup or reproducibility controls.
+* No automatic system configuration - user manually configures system.
 
 ---
 
@@ -46,16 +46,16 @@ The tool must run workloads under different power management configurations, cap
 
 ```
 batlab.sh (CLI)
-  ├─ config/ (configuration scripts for any system settings)
-  ├─ workload/ (workload scripts - any commands/scenarios)
-  ├─ lib/telemetry.sh (OS-specific readers + extensible collectors)
+  ├─ workload/ (workload scripts - any commands/scenarios)  
+  ├─ lib/telemetry.sh (OS-specific readers + system metrics)
   ├─ data/ (logs/.jsonl/.csv per run)
   └─ report/ (generated summaries & plots)
 ```
 
-* **Runner**: executes configuration scripts, records full system state, runs workloads, samples telemetry and system metrics, stops on conditions.
-* **Telemetry**: reads power/charge from OS sources; collects arbitrary system metrics; falls back to %/time slope if needed.
-* **Configuration**: extensible system for applying and recording any system settings.
+* **Logger**: samples telemetry and system metrics continuously, records to JSONL
+* **Runner**: executes workloads in separate process while logger runs
+* **Telemetry**: reads power/charge from OS sources; collects system metrics; falls back to %/time slope if needed.
+* **Configuration**: user manually configures system, tool records configuration name only.
 * **Reporter**: parses logs → CSV → aggregate stats → optional plots.
 
 ---
@@ -64,43 +64,39 @@ batlab.sh (CLI)
 
 ```
 batlab.sh init
-batlab.sh config apply <name>
-batlab.sh run <config> -- <workload> [args...]
+batlab.sh log <config-name>
+batlab.sh run <workload> [args...]
 batlab.sh report [--group-by os,config,workload] [--format table|csv|json]
 batlab.sh export [--csv data/summary.csv] [--json data/summary.json]
-batlab.sh list [configs|workloads]
+batlab.sh list workloads
 ```
 
 ### 4.1 `init`
 
 * Create the data directories; probe telemetry capabilities; print checklist.
 
-### 4.2 `config apply <name>`
+### 4.2 `log <config-name>`
 
-* Source a configuration script from `config/<name>.sh` that implements `apply()` and `describe()` functions.
-* Record complete system state before/after configuration changes.
-* Configuration scripts can modify any system settings and must document their changes.
-
-### 4.3 `run <config> -- <workload>`
-
-* Preconditions: on battery, lid open, charger disconnected.
-* Start log; capture complete system snapshot (OS, kernel, hardware, all relevant system settings).
+* Start continuous telemetry logging with user-provided configuration name.
+* Record current system snapshot (OS, kernel, hardware, system settings).
 * Sample at 1 Hz by default (configurable).
-* Stop conditions (any):
+* Run until manually stopped (Ctrl+C) or battery dies.
+* Configuration name is user-defined label for manual system configuration.
 
-  * Duration elapsed (configurable, no default)
-  * Battery percentage drop reached (configurable, no default)
-  * Workload exits (default behavior)
-  * Manual interrupt
+### 4.3 `run <workload> [args...]`
+
+* Run workload in separate terminal while logger runs.
+* Workload runs until completion or manual interrupt.
+* No automatic coordination with logger - user manages both processes.
 
 ### 4.4 `report`
 
 * Scan `data/*.jsonl` and print a table with averages and confidence bands (mean/median/p95), grouped as requested.
 * Support filtering by any metadata fields.
 
-### 4.5 `list`
+### 4.5 `list workloads`
 
-* List available configurations or workloads with descriptions.
+* List available workloads with descriptions.
 
 ### 4.6 `export`
 
@@ -223,54 +219,47 @@ Columns: `run_id, os, config, workload, duration_s, avg_watts, median_watts, p95
 
 The workload system supports any executable workload. Built-in workloads include:
 
-* `idle`: configurable sleep duration with screen on.
+* `idle`: configurable sleep with screen on.
 * `web_idle`: loop rendering text pages with configurable cadence.
 * `compile`: compile projects with configurable parallelism and iterations.
 * `video_playback`: play media files with configurable parameters.
 * `wifi_throughput`: network throughput tests with configurable patterns.
-* `custom`: run arbitrary commands or scripts.
+* `stress`: CPU/memory stress testing with configurable intensity.
 
 Each workload resides in `workload/<name>.sh`, implements standard interface:
 * `describe()` - return description
-* `run(duration, args...)` - execute workload
-* Must accept `--duration` and exit cleanly when signaled.
+* `run(args...)` - execute workload until completion or interrupt
+* Must exit cleanly when signaled (Ctrl+C).
 * Can define custom parameters and validation.
+
+**Usage pattern**: Run `batlab.sh log <config-name>` in one terminal, then `batlab.sh run <workload>` in another.
 
 ---
 
-## 9. Configuration System (fully extensible)
+## 9. Manual Configuration System
 
-### 9.1 Configuration Interface
+### 9.1 Configuration Approach
 
-All configurations are **shell scripts** in `config/<name>.sh` that implement:
+**User responsibility**: All system configuration is done manually by the researcher.
 
-```bash
-describe() {
-    echo "Configuration description"
-}
+**Tool responsibility**: Record the user-provided configuration name and current system state.
 
-apply() {
-    # Apply system changes
-    # Must be idempotent where possible
-    # Must log all changes made
-    # Return 0 on success, non-zero on failure
-}
+### 9.2 Workflow
 
-revert() {  # optional
-    # Undo changes if possible
-}
-```
+1. **Manual setup**: User configures system power management manually (governors, C-states, services, etc.)
+2. **Start logging**: `batlab.sh log my-config-name` - begins telemetry collection
+3. **Run workload**: `batlab.sh run workload-name` (in separate terminal)
+4. **Stop when done**: Ctrl+C to stop logging, or let battery drain completely
+5. **Repeat**: Change configuration manually, repeat with new config name
 
-### 9.2 Example Configurations
+### 9.3 Configuration Examples
 
-Configurations can modify any system aspect:
-* Power management settings (`powerd`, governors, C-states)
-* Kernel parameters (`sysctl` values)
-* Service states (enable/disable services)
-* Hardware settings (GPU, WiFi, storage)
-* Custom optimizations and tweaks
-
-The system imposes no limitations on what configurations can modify - they have full system access and responsibility.
+Example configuration names (user-defined):
+* `freebsd-default` - Stock FreeBSD installation
+* `freebsd-powerd-min` - powerd with minimum power settings
+* `freebsd-c8-states` - Aggressive C-state configuration  
+* `linux-baseline` - Default Linux distribution settings
+* `linux-tlp-optimized` - Linux with TLP power optimization
 
 ---
 
@@ -319,18 +308,15 @@ CLI flags override env.
 ├── batlab.sh
 ├── lib/
 │   └── telemetry.sh
-├── config/
-│   ├── fbsd-default.sh
-│   ├── fbsd-experimental.sh
-│   ├── linux-baseline.sh
-│   └── [unlimited custom configs]
+
 ├── workload/
 │   ├── idle.sh
 │   ├── web_idle.sh
 │   ├── compile.sh
 │   ├── video_playback.sh
 │   └── [unlimited custom workloads]
-│   └── wifi_throughput.sh
+├── wifi_throughput.sh
+│   └── stress.sh
 ├── data/
 ├── report/
 └── SPEC.md

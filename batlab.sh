@@ -1,0 +1,821 @@
+#!/bin/sh
+
+# batlab - Battery Test Harness
+# Cross-platform battery efficiency measurement for FreeBSD vs Linux research
+# Manual configuration approach - user configures system, tool records data
+
+set -e
+
+VERSION="0.1.0"
+SCRIPT_DIR="$(dirname "$(readlink -f "$0" 2>/dev/null || realpath "$0")")"
+DATA_DIR="${SCRIPT_DIR}/data"
+WORKLOAD_DIR="${SCRIPT_DIR}/workload"
+LIB_DIR="${SCRIPT_DIR}/lib"
+
+# Default configuration
+SAMPLING_HZ=1
+
+# Load environment configuration if available
+if [ -f "${SCRIPT_DIR}/.env" ]; then
+    # shellcheck source=/dev/null
+    . "${SCRIPT_DIR}/.env"
+fi
+
+# Colors for output
+if [ -t 1 ]; then
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[1;33m'
+    BLUE='\033[0;34m'
+    NC='\033[0m' # No Color
+else
+    RED=''
+    GREEN=''
+    YELLOW=''
+    BLUE=''
+    NC=''
+fi
+
+# Logging functions
+log_info() {
+    printf "${BLUE}[INFO]${NC} %s\n" "$*" >&2
+}
+
+log_warn() {
+    printf "${YELLOW}[WARN]${NC} %s\n" "$*" >&2
+}
+
+log_error() {
+    printf "${RED}[ERROR]${NC} %s\n" "$*" >&2
+}
+
+log_success() {
+    printf "${GREEN}[SUCCESS]${NC} %s\n" "$*" >&2
+}
+
+# Usage information
+usage() {
+    cat << EOF
+batlab $VERSION - Battery Test Harness for FreeBSD vs Linux Research
+
+USAGE:
+    $0 init
+    $0 log <config-name>
+    $0 run <workload> [args...]
+    $0 report [--group-by os,config,workload] [--format table|csv|json]
+    $0 export [--csv file.csv] [--json file.json]
+    $0 list workloads
+    $0 help
+
+COMMANDS:
+    init                Initialize directories and check system capabilities
+    log <config-name>   Start telemetry logging with user-defined configuration name
+    run <workload>      Run workload (use in separate terminal while logging)
+    report              Analyze collected data and display results
+    export              Export summary data for external analysis
+    list workloads      List available workloads
+    help                Show this help message
+
+WORKFLOW:
+    1. Manually configure your system power management
+    2. Terminal 1: $0 log my-config-name
+    3. Terminal 2: $0 run workload-name
+    4. Stop both with Ctrl+C when done
+
+EXAMPLES:
+    $0 init
+    $0 log freebsd-powerd-min     # Terminal 1
+    $0 run idle                   # Terminal 2
+    $0 report --group-by config
+
+For detailed usage see README.md
+EOF
+}
+
+# Check if running as root
+check_root() {
+    if [ "$(id -u)" -eq 0 ] && [ "$1" != "--i-am-sure" ]; then
+        log_error "Running as root is not recommended for safety"
+        log_error "Use --i-am-sure flag if you really need to run as root"
+        exit 1
+    fi
+}
+
+# Detect OS
+detect_os() {
+    if [ -f /etc/os-release ]; then
+        echo "Linux"
+    elif uname -s | grep -q FreeBSD; then
+        echo "FreeBSD"
+    else
+        echo "Unknown"
+    fi
+}
+
+# Check if on battery power
+check_battery() {
+    os_type=$(detect_os)
+
+    case "$os_type" in
+        Linux)
+            if command -v upower >/dev/null 2>&1; then
+                if upower -i $(upower -e | grep 'BAT') 2>/dev/null | grep -q "state.*charging"; then
+                    log_warn "System appears to be charging - unplug AC adapter for accurate measurements"
+                fi
+            fi
+            ;;
+        FreeBSD)
+            if command -v acpiconf >/dev/null 2>&1; then
+                if acpiconf -i 0 2>/dev/null | grep -q "State.*charging"; then
+                    log_warn "System appears to be charging - unplug AC adapter for accurate measurements"
+                fi
+            fi
+            ;;
+    esac
+}
+
+# Initialize project directories and check capabilities
+cmd_init() {
+    log_info "Initializing batlab battery test harness..."
+
+    # Create directories
+    for dir in "$DATA_DIR" "$WORKLOAD_DIR" "$LIB_DIR" "${SCRIPT_DIR}/report"; do
+        if [ ! -d "$dir" ]; then
+            mkdir -p "$dir"
+            log_info "Created directory: $dir"
+        fi
+    done
+
+    # Create telemetry library
+    if [ ! -f "$LIB_DIR/telemetry.sh" ]; then
+        log_info "Creating telemetry library..."
+        cat > "$LIB_DIR/telemetry.sh" << 'EOF'
+#!/bin/sh
+# Telemetry collection library for battery, CPU, memory, temperature
+
+# Get current timestamp in ISO format
+get_timestamp() {
+    date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u '+%Y-%m-%dT%H:%M:%SZ'
+}
+
+# Get battery percentage and power draw
+get_battery_info() {
+    os_type="$1"
+
+    case "$os_type" in
+        Linux)
+            get_battery_linux
+            ;;
+        FreeBSD)
+            get_battery_freebsd
+            ;;
+        *)
+            echo "pct:0,watts:0,src:unsupported"
+            ;;
+    esac
+}
+
+get_battery_linux() {
+    # Try upower first
+    if command -v upower >/dev/null 2>&1; then
+        battery=$(upower -e | grep 'BAT' | head -1)
+        if [ -n "$battery" ]; then
+            info=$(upower -i "$battery" 2>/dev/null)
+            pct=$(echo "$info" | grep percentage | grep -o '[0-9]*' | head -1)
+            watts=$(echo "$info" | grep energy-rate | grep -o '[0-9.]*' | head -1)
+
+            if [ -n "$pct" ] && [ -n "$watts" ]; then
+                echo "pct:${pct},watts:${watts},src:upower"
+                return
+            fi
+        fi
+    fi
+
+    # Try sysfs fallback
+    for bat in /sys/class/power_supply/BAT*; do
+        if [ -d "$bat" ]; then
+            if [ -f "$bat/capacity" ]; then
+                pct=$(cat "$bat/capacity" 2>/dev/null || echo "0")
+            fi
+
+            watts="0"
+            if [ -f "$bat/power_now" ]; then
+                power_uw=$(cat "$bat/power_now" 2>/dev/null || echo "0")
+                watts=$(echo "scale=2; $power_uw / 1000000" | bc 2>/dev/null || echo "0")
+            fi
+
+            echo "pct:${pct:-0},watts:${watts},src:sysfs"
+            return
+        fi
+    done
+
+    echo "pct:0,watts:0,src:unavailable"
+}
+
+get_battery_freebsd() {
+    if command -v acpiconf >/dev/null 2>&1; then
+        info=$(acpiconf -i 0 2>/dev/null)
+        pct=$(echo "$info" | grep "Remaining capacity" | grep -o '[0-9]*' | head -1)
+        rate_mw=$(echo "$info" | grep "Present rate" | grep -o '[0-9]*' | head -1)
+
+        if [ -n "$rate_mw" ] && [ "$rate_mw" -gt 0 ]; then
+            watts=$(echo "scale=3; $rate_mw / 1000" | bc 2>/dev/null || echo "0")
+        else
+            watts="0"
+        fi
+
+        echo "pct:${pct:-0},watts:${watts},src:acpiconf"
+    else
+        echo "pct:0,watts:0,src:unavailable"
+    fi
+}
+
+# Get CPU load (1-minute average)
+get_cpu_load() {
+    os_type="$1"
+
+    case "$os_type" in
+        Linux)
+            if [ -f /proc/loadavg ]; then
+                cut -d' ' -f1 /proc/loadavg
+            else
+                echo "0"
+            fi
+            ;;
+        FreeBSD)
+            sysctl -n vm.loadavg 2>/dev/null | cut -d' ' -f2 || echo "0"
+            ;;
+        *)
+            echo "0"
+            ;;
+    esac
+}
+
+# Get memory usage percentage
+get_memory_usage() {
+    os_type="$1"
+
+    case "$os_type" in
+        Linux)
+            if [ -f /proc/meminfo ]; then
+                awk '/MemTotal:/ {total=$2} /MemAvailable:/ {avail=$2} END {print int((total-avail)*100/total)}' /proc/meminfo 2>/dev/null || echo "0"
+            else
+                echo "0"
+            fi
+            ;;
+        FreeBSD)
+            # Calculate from vm.stats sysctls
+            total=$(sysctl -n vm.stats.vm.v_page_count 2>/dev/null || echo "0")
+            free=$(sysctl -n vm.stats.vm.v_free_count 2>/dev/null || echo "0")
+            if [ "$total" -gt 0 ]; then
+                echo "$total $free" | awk '{print int(($1-$2)*100/$1)}'
+            else
+                echo "0"
+            fi
+            ;;
+        *)
+            echo "0"
+            ;;
+    esac
+}
+
+# Get temperature (first available thermal sensor)
+get_temperature() {
+    os_type="$1"
+
+    case "$os_type" in
+        Linux)
+            # Try thermal zones
+            for zone in /sys/class/thermal/thermal_zone*/temp; do
+                if [ -f "$zone" ]; then
+                    temp_millic=$(cat "$zone" 2>/dev/null)
+                    if [ -n "$temp_millic" ] && [ "$temp_millic" -gt 0 ]; then
+                        echo "scale=1; $temp_millic / 1000" | bc 2>/dev/null || echo "0"
+                        return
+                    fi
+                fi
+            done
+
+            # Try hwmon
+            for hwmon in /sys/class/hwmon/hwmon*/temp*_input; do
+                if [ -f "$hwmon" ]; then
+                    temp_millic=$(cat "$hwmon" 2>/dev/null)
+                    if [ -n "$temp_millic" ] && [ "$temp_millic" -gt 0 ]; then
+                        echo "scale=1; $temp_millic / 1000" | bc 2>/dev/null || echo "0"
+                        return
+                    fi
+                fi
+            done
+
+            echo "0"
+            ;;
+        FreeBSD)
+            # Try CPU temperature
+            temp=$(sysctl -n dev.cpu.0.temperature 2>/dev/null | sed 's/C//' || echo "")
+            if [ -n "$temp" ]; then
+                echo "$temp"
+                return
+            fi
+
+            # Try ACPI thermal zones
+            for tz in $(sysctl -N hw.acpi.thermal 2>/dev/null | grep temperature | head -1); do
+                temp=$(sysctl -n "$tz" 2>/dev/null | sed 's/C//' || echo "")
+                if [ -n "$temp" ]; then
+                    echo "$temp"
+                    return
+                fi
+            done
+
+            echo "0"
+            ;;
+        *)
+            echo "0"
+            ;;
+    esac
+}
+
+# Sample all telemetry and output JSON line
+sample_telemetry() {
+    os_type=$(uname -s | grep -q FreeBSD && echo "FreeBSD" || echo "Linux")
+    timestamp=$(get_timestamp)
+
+    # Get battery info
+    battery_info=$(get_battery_info "$os_type")
+    pct=$(echo "$battery_info" | cut -d, -f1 | cut -d: -f2)
+    watts=$(echo "$battery_info" | cut -d, -f2 | cut -d: -f2)
+    src=$(echo "$battery_info" | cut -d, -f3 | cut -d: -f2)
+
+    # Get system metrics
+    cpu_load=$(get_cpu_load "$os_type")
+    ram_pct=$(get_memory_usage "$os_type")
+    temp_c=$(get_temperature "$os_type")
+
+    # Output JSON line
+    cat << EOJSON
+{"t":"$timestamp","pct":$pct,"watts":$watts,"cpu_load":$cpu_load,"ram_pct":$ram_pct,"temp_c":$temp_c,"src":"$src"}
+EOJSON
+}
+EOF
+        chmod +x "$LIB_DIR/telemetry.sh"
+    fi
+
+    # Create example workloads
+    create_example_workloads
+
+    # Detect OS and capabilities
+    log_info "Detecting system capabilities..."
+    os_type=$(detect_os)
+    log_info "Detected: $os_type system"
+
+    # Check battery access
+    case "$os_type" in
+        Linux)
+            if command -v upower >/dev/null 2>&1; then
+                log_success "upower available for battery telemetry"
+            elif [ -d /sys/class/power_supply ]; then
+                log_success "sysfs power_supply available for battery telemetry"
+            else
+                log_warn "No battery telemetry sources found"
+            fi
+            ;;
+        FreeBSD)
+            if command -v acpiconf >/dev/null 2>&1; then
+                log_success "acpiconf available for battery telemetry"
+            else
+                log_warn "acpiconf not found - install it for battery telemetry"
+            fi
+            ;;
+        *)
+            log_warn "Unsupported OS: $os_type - some features may not work"
+            ;;
+    esac
+
+    log_success "Initialization complete!"
+    log_info "Next steps:"
+    log_info "  1. Manually configure your system power management"
+    log_info "  2. Run: $0 log <config-name> (in terminal 1)"
+    log_info "  3. Run: $0 run <workload> (in terminal 2)"
+}
+
+create_example_workloads() {
+    # Create idle workload
+    cat > "$WORKLOAD_DIR/idle.sh" << 'EOF'
+#!/bin/sh
+
+describe() {
+    echo "Idle workload - sleep with screen on"
+}
+
+run() {
+    duration="3600"  # Default 1 hour
+
+    # Parse arguments
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --duration)
+                duration="$2"
+                shift 2
+                ;;
+            *)
+                echo "Unknown option: $1" >&2
+                return 1
+                ;;
+        esac
+    done
+
+    echo "Running idle workload for $duration seconds..."
+    echo "Press Ctrl+C to stop"
+
+    # Keep screen on and just sleep
+    sleep "$duration"
+}
+EOF
+
+    # Create stress workload
+    cat > "$WORKLOAD_DIR/stress.sh" << 'EOF'
+#!/bin/sh
+
+describe() {
+    echo "CPU stress test workload"
+}
+
+run() {
+    intensity="50"
+    duration="3600"
+
+    # Parse arguments
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --intensity)
+                intensity="$2"
+                shift 2
+                ;;
+            --duration)
+                duration="$2"
+                shift 2
+                ;;
+            *)
+                echo "Unknown option: $1" >&2
+                return 1
+                ;;
+        esac
+    done
+
+    echo "Running CPU stress at $intensity% for $duration seconds..."
+
+    # Simple CPU stress using dd and compression
+    ncpu=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo "1")
+
+    i=0
+    while [ $i -lt "$ncpu" ]; do
+        (
+            end_time=$(($(date +%s) + duration))
+            while [ $(date +%s) -lt $end_time ]; do
+                dd if=/dev/zero bs=1M count=1 2>/dev/null | gzip >/dev/null
+                sleep 0.1
+            done
+        ) &
+        i=$((i + 1))
+    done
+
+    wait
+}
+EOF
+
+    chmod +x "$WORKLOAD_DIR"/*.sh
+}
+
+# Start telemetry logging
+cmd_log() {
+    config_name="$1"
+
+    if [ -z "$config_name" ]; then
+        log_error "Configuration name required"
+        log_error "Usage: $0 log <config-name>"
+        return 1
+    fi
+
+    # Validate config name (no special characters)
+    case "$config_name" in
+        *[^a-zA-Z0-9_-]*)
+            log_error "Configuration name should only contain letters, numbers, hyphens and underscores"
+            return 1
+            ;;
+    esac
+
+    check_battery
+
+    # Load telemetry library
+    if [ ! -f "$LIB_DIR/telemetry.sh" ]; then
+        log_error "Telemetry library not found. Run: $0 init"
+        return 1
+    fi
+
+    # shellcheck source=/dev/null
+    . "$LIB_DIR/telemetry.sh"
+
+    # Generate run ID
+    timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    hostname=$(hostname)
+    os_type=$(detect_os)
+    run_id="${timestamp}_${hostname}_${os_type}_${config_name}"
+
+    # Create output files
+    jsonl_file="$DATA_DIR/${run_id}.jsonl"
+    meta_file="$DATA_DIR/${run_id}.meta.json"
+
+    log_info "Starting telemetry logging..."
+    log_info "Configuration: $config_name"
+    log_info "Run ID: $run_id"
+    log_info "Output: $jsonl_file"
+    log_info "Press Ctrl+C to stop logging"
+
+    # Create metadata
+    cat > "$meta_file" << EOF
+{
+  "run_id": "$run_id",
+  "host": "$hostname",
+  "os": "$os_type $(uname -r)",
+  "config": "$config_name",
+  "start_time": "$timestamp",
+  "sampling_hz": $SAMPLING_HZ
+}
+EOF
+
+    # Set up signal handler for clean exit
+    trap 'log_info "Stopping telemetry logging..."; exit 0' INT TERM
+
+    # Start sampling loop
+    log_success "Logging started - run workload in another terminal"
+
+    while true; do
+        sample_telemetry >> "$jsonl_file"
+        sleep "$(echo "1.0 / $SAMPLING_HZ" | bc -l 2>/dev/null || echo "1")"
+    done
+}
+
+# Run workload
+cmd_run() {
+    workload_name="$1"
+    shift
+
+    if [ -z "$workload_name" ]; then
+        log_error "Workload name required"
+        log_error "Usage: $0 run <workload> [args...]"
+        return 1
+    fi
+
+    workload_file="$WORKLOAD_DIR/${workload_name}.sh"
+    if [ ! -f "$workload_file" ]; then
+        log_error "Workload not found: $workload_file"
+        log_error "Available workloads:"
+        cmd_list workloads
+        return 1
+    fi
+
+    log_info "Running workload: $workload_name"
+
+    # Source the workload file
+    # shellcheck source=/dev/null
+    . "$workload_file"
+
+    # Check required functions
+    if ! command -v run >/dev/null 2>&1; then
+        log_error "Workload $workload_name missing run() function"
+        return 1
+    fi
+
+    if command -v describe >/dev/null 2>&1; then
+        log_info "Description: $(describe)"
+    fi
+
+    # Run the workload
+    log_success "Starting workload..."
+    if run "$@"; then
+        log_success "Workload completed successfully"
+    else
+        log_error "Workload failed"
+        return 1
+    fi
+}
+
+# Generate report from collected data
+cmd_report() {
+    group_by="config"
+    format="table"
+
+    # Parse arguments
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --group-by)
+                group_by="$2"
+                shift 2
+                ;;
+            --format)
+                format="$2"
+                shift 2
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    log_info "Generating report (group by: $group_by, format: $format)"
+
+    # Count available data files
+    data_files=$(find "$DATA_DIR" -name "*.jsonl" 2>/dev/null | wc -l)
+
+    if [ "$data_files" -eq 0 ]; then
+        log_warn "No test data found in $DATA_DIR"
+        log_info "Run some tests first:"
+        log_info "  Terminal 1: $0 log <config-name>"
+        log_info "  Terminal 2: $0 run <workload>"
+        return 0
+    fi
+
+    log_info "Found $data_files test runs"
+
+    # Simple report - list runs with basic stats
+    printf "%-30s %-15s %-10s %-10s %-10s\n" "RUN_ID" "CONFIG" "SAMPLES" "AVG_WATTS" "AVG_TEMP"
+    printf "%s\n" "--------------------------------------------------------------------------------"
+
+    for jsonl in "$DATA_DIR"/*.jsonl; do
+        [ -f "$jsonl" ] || continue
+
+        run_id=$(basename "$jsonl" .jsonl)
+        config=$(echo "$run_id" | rev | cut -d_ -f1 | rev)
+
+        # Calculate basic stats
+        if [ -f "$jsonl" ]; then
+            samples=$(wc -l < "$jsonl")
+            avg_watts=$(awk -F'"watts":' '{if(NF>1) sum+=$2; count++} END {print (count>0) ? sum/count : 0}' "$jsonl" | cut -d, -f1)
+            avg_temp=$(awk -F'"temp_c":' '{if(NF>1) sum+=$2; count++} END {print (count>0) ? sum/count : 0}' "$jsonl" | cut -d, -f1)
+
+            printf "%-30s %-15s %-10d %-10.2f %-10.1f\n" \
+                "$(echo "$run_id" | cut -c1-30)" \
+                "$(echo "$config" | cut -c1-15)" \
+                "$samples" \
+                "$avg_watts" \
+                "$avg_temp"
+        fi
+    done
+}
+
+# Export data
+cmd_export() {
+    csv_file=""
+    json_file=""
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --csv)
+                csv_file="$2"
+                shift 2
+                ;;
+            --json)
+                json_file="$2"
+                shift 2
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    if [ -z "$csv_file" ] && [ -z "$json_file" ]; then
+        log_error "Specify --csv and/or --json output file"
+        return 1
+    fi
+
+    if [ -n "$csv_file" ]; then
+        log_info "Exporting to CSV: $csv_file"
+
+        # Create CSV header
+        echo "run_id,config,os,samples,avg_watts,median_watts,avg_cpu_load,avg_ram_pct,avg_temp_c" > "$csv_file"
+
+        # Process each run
+        for jsonl in "$DATA_DIR"/*.jsonl; do
+            [ -f "$jsonl" ] || continue
+
+            run_id=$(basename "$jsonl" .jsonl)
+            config=$(echo "$run_id" | cut -d_ -f4)
+            os=$(echo "$run_id" | cut -d_ -f3)
+
+            if [ -f "$jsonl" ]; then
+                samples=$(wc -l < "$jsonl")
+
+                # Calculate averages using awk
+                stats=$(awk -F'[":,}]' '
+                {
+                    for(i=1;i<=NF;i++) {
+                        if($i=="watts") watts[NR]=$(i+1)
+                        if($i=="cpu_load") cpu_load[NR]=$(i+1)
+                        if($i=="ram_pct") ram_pct[NR]=$(i+1)
+                        if($i=="temp_c") temp_c[NR]=$(i+1)
+                    }
+                }
+                END {
+                    sum_watts=0; sum_cpu=0; sum_ram=0; sum_temp=0; count=0
+                    for(i=1;i<=NR;i++) {
+                        if(watts[i]>0) {sum_watts+=watts[i]; count++}
+                        sum_cpu+=cpu_load[i]; sum_ram+=ram_pct[i]; sum_temp+=temp_c[i]
+                    }
+                    printf "%.2f,%.2f,%.2f,%.2f,%.1f",
+                        (count>0)?sum_watts/count:0, (count>0)?sum_watts/count:0,
+                        (NR>0)?sum_cpu/NR:0, (NR>0)?sum_ram/NR:0, (NR>0)?sum_temp/NR:0
+                }' "$jsonl")
+
+                echo "$run_id,$config,$os,$samples,$stats" >> "$csv_file"
+            fi
+        done
+
+        log_success "CSV exported to: $csv_file"
+    fi
+
+    if [ -n "$json_file" ]; then
+        log_info "JSON export not yet implemented"
+    fi
+}
+
+# List workloads
+cmd_list() {
+    type="${1:-workloads}"
+
+    case "$type" in
+        workloads)
+            log_info "Available workloads:"
+            if [ -d "$WORKLOAD_DIR" ] && [ "$(ls -A "$WORKLOAD_DIR" 2>/dev/null)" ]; then
+                for workload in "$WORKLOAD_DIR"/*.sh; do
+                    [ -f "$workload" ] || continue
+                    workload_name=$(basename "$workload" .sh)
+
+                    # Try to get description
+                    description="No description"
+                    if grep -q "describe()" "$workload" 2>/dev/null; then
+                        # shellcheck source=/dev/null
+                        . "$workload"
+                        if command -v describe >/dev/null 2>&1; then
+                            description=$(describe)
+                        fi
+                    fi
+
+                    printf "  %-20s %s\n" "$workload_name" "$description"
+                done
+            else
+                log_warn "No workloads found in $WORKLOAD_DIR"
+                log_info "Run '$0 init' to create example workloads"
+            fi
+            ;;
+        *)
+            log_error "Usage: $0 list workloads"
+            return 1
+            ;;
+    esac
+}
+
+# Main command dispatcher
+main() {
+    if [ $# -eq 0 ]; then
+        usage
+        exit 1
+    fi
+
+    command="$1"
+    shift
+
+    case "$command" in
+        init)
+            cmd_init "$@"
+            ;;
+        log)
+            check_root "$@"
+            cmd_log "$@"
+            ;;
+        run)
+            cmd_run "$@"
+            ;;
+        report)
+            cmd_report "$@"
+            ;;
+        export)
+            cmd_export "$@"
+            ;;
+        list)
+            cmd_list "$@"
+            ;;
+        help|--help|-h)
+            usage
+            ;;
+        *)
+            log_error "Unknown command: $command"
+            usage
+            exit 1
+            ;;
+    esac
+}
+
+# Run main function
+main "$@"

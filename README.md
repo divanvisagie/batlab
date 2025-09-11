@@ -18,11 +18,11 @@ The research addresses the hypothesis that properly tuned FreeBSD can achieve co
 
 ## How It Works
 
-`batlab` applies system power management configurations, runs standardized workloads, and measures power consumption, system load, and temperatures. This enables direct comparison between FreeBSD configurations and Linux baselines to quantify the actual battery life gap and track improvements.
+`batlab` measures power consumption, system load, and temperatures while you manually configure systems and run workloads. This enables direct comparison between your FreeBSD configurations and Linux baselines to quantify the actual battery life gap and track improvements.
 
-**Primary comparison:** FreeBSD configurations vs Linux baseline  
+**Primary comparison:** Manual FreeBSD configurations vs Linux baseline  
 **Supported platforms:** Linux, FreeBSD  
-**Design philosophy:** Simple, extensible, research-focused
+**Design philosophy:** Simple, manual, research-focused - you control the system, tool records data
 
 ## Quick Start
 
@@ -30,17 +30,16 @@ The research addresses the hypothesis that properly tuned FreeBSD can achieve co
 # Initialize the test environment
 ./batlab.sh init
 
-# List available configurations and workloads
-./batlab.sh list configs
+# List available workloads
 ./batlab.sh list workloads
 
-# Apply a configuration
-./batlab.sh config apply linux-baseline
+# Terminal 1: Start logging with your config name
+./batlab.sh log freebsd-powerd-min
 
-# Run a test (10 minutes, stop on 5% battery drop)
-./batlab.sh run linux-baseline -- idle --duration 600
+# Terminal 2: Run workload (while logging runs)
+./batlab.sh run idle
 
-# View results
+# Stop both with Ctrl+C when done, then view results
 ./batlab.sh report
 ./batlab.sh export --csv results.csv
 ```
@@ -64,43 +63,39 @@ cd batlab
 
 ### Basic Workflow
 
-1. **Create/select a configuration** - System settings to test
-2. **Apply the configuration** - Modify system power management  
-3. **Run workload** - Execute test while measuring power
-4. **Analyze results** - Compare across configurations
+1. **Manually configure system** - Set up power management yourself
+2. **Start telemetry logging** - Record with your config name  
+3. **Run workload in separate terminal** - While logging continues
+4. **Stop and analyze results** - Compare across your configurations
 
 ### Commands
 
 #### `batlab.sh init`
 Initialize directories and check system capabilities.
 
-#### `batlab.sh config apply <name>`
-Apply a system configuration from `config/<name>.sh`.
+#### `batlab.sh log <config-name>`
+Start continuous telemetry logging with your configuration name.
 
 ```bash
-./batlab.sh config apply fbsd-powersave
-./batlab.sh config apply linux-baseline
+./batlab.sh log freebsd-powerd-aggressive
+./batlab.sh log linux-baseline-tlp
 ```
 
-#### `batlab.sh run <config> -- <workload> [args...]`
-Run a workload under a configuration and collect telemetry.
+#### `batlab.sh run <workload> [args...]`
+Run a workload in separate terminal while logging continues.
 
 ```bash
-# Basic idle test
-./batlab.sh run linux-baseline -- idle --duration 300
+# Basic idle test  
+./batlab.sh run idle
 
-# Video playback test  
-./batlab.sh run fbsd-powersave -- video_playback --file ~/test.mp4 --duration 600
+# Video playback test
+./batlab.sh run video_playback --file ~/test.mp4
 
 # Compile workload
-./batlab.sh run fbsd-maxperf -- compile --project ~/src/myproject --iterations 3
+./batlab.sh run compile --project ~/src/myproject --iterations 3
 ```
 
-**Stop conditions:**
-- Workload completes naturally
-- `--duration` seconds elapsed  
-- Battery drops by configured percentage
-- Manual interrupt (Ctrl+C)
+**Usage pattern:** Run logger in one terminal, workload in another. Stop both with Ctrl+C when done.
 
 #### `batlab.sh report [options]`
 Analyze collected data and display results.
@@ -123,36 +118,34 @@ Analyze collected data and display results.
 #### `batlab.sh export --csv <file> [--json <file>]`
 Export summary data for external analysis.
 
-#### `batlab.sh list [configs|workloads]`
-List available configurations or workloads with descriptions.
+#### `batlab.sh list workloads`
+List available workloads with descriptions.
 
-### Configuration Files
+### Manual Configuration
 
-Create custom configurations in `config/<name>.sh`:
+You manually configure your system power management settings:
 
+**FreeBSD examples:**
 ```bash
-#!/bin/sh
+# Configure powerd for aggressive power saving
+sysctl hw.acpi.cpu.cx_lowest=C8
+powerd_flags="-a adaptive -b minimum -n minimum"  
+service powerd restart
 
-describe() {
-    echo "Custom FreeBSD power saving configuration"
-}
-
-apply() {
-    # Apply system changes
-    sysctl hw.acpi.cpu.cx_lowest=C3
-    powerd_flags="-a adaptive -b minimum -n minimum"
-    service powerd restart
-    
-    # Log changes for reporting
-    echo "Applied C3 C-states and minimum power policy"
-}
-
-revert() {  # optional
-    # Restore previous settings
-    sysctl hw.acpi.cpu.cx_lowest=C1
-    service powerd onerestart
-}
+# Enable WiFi power saving
+ifconfig wlan0 powersave
 ```
+
+**Linux examples:**
+```bash
+# Set CPU governor  
+echo powersave | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+
+# Enable laptop mode
+echo 1 | sudo tee /proc/sys/vm/laptop_mode
+```
+
+Then use a descriptive name when logging: `./batlab.sh log freebsd-c8-powersave`
 
 ### Workload Files
 
@@ -182,25 +175,30 @@ run() {
 ### Core Research Workflow: FreeBSD vs Linux Comparison
 
 ```bash
-# Establish Linux baseline on your hardware
-./batlab.sh config apply linux-baseline
-./batlab.sh run linux-baseline -- idle --duration 600
-./batlab.sh run linux-baseline -- compile --duration 600
-./batlab.sh run linux-baseline -- video_playback --duration 600
+# Boot into Linux, manually configure baseline settings
+# Terminal 1: Start logging
+./batlab.sh log linux-baseline
 
-# Test default FreeBSD (likely poor performance)
-./batlab.sh config apply fbsd-default  
-./batlab.sh run fbsd-default -- idle --duration 600
-./batlab.sh run fbsd-default -- compile --duration 600
-./batlab.sh run fbsd-default -- video_playback --duration 600
+# Terminal 2: Run tests
+./batlab.sh run idle       # Let run until battery low
+./batlab.sh run compile    # Restart logging between tests  
+./batlab.sh run video_playback
 
-# Test aggressive FreeBSD power saving
-./batlab.sh config apply fbsd-powersave
-./batlab.sh run fbsd-powersave -- idle --duration 600
-./batlab.sh run fbsd-powersave -- compile --duration 600  
-./batlab.sh run fbsd-powersave -- video_playback --duration 600
+# Boot into FreeBSD, configure default settings
+# Terminal 1: Start logging  
+./batlab.sh log freebsd-default
 
-# Compare and find the gap
+# Terminal 2: Run same tests
+./batlab.sh run idle
+./batlab.sh run compile
+./batlab.sh run video_playback
+
+# Configure FreeBSD for power saving, repeat
+./batlab.sh log freebsd-powersave
+./batlab.sh run idle
+# ... etc
+
+# Compare results
 ./batlab.sh report --group-by os,config
 echo "How close did FreeBSD get to Linux efficiency?"
 ```
@@ -209,40 +207,25 @@ echo "How close did FreeBSD get to Linux efficiency?"
 
 ```bash
 # Test deep C-states hypothesis
-cat > config/fbsd-deep-cstates.sh << 'EOF'
-describe() { echo "FreeBSD with aggressive C-state policy"; }
-apply() {
-    sysctl hw.acpi.cpu.cx_lowest=C8
-    powerd_flags="-a adaptive -b minimum -n minimum"
-    service powerd restart
-}
-EOF
+sysctl hw.acpi.cpu.cx_lowest=C8
+powerd_flags="-a adaptive -b minimum -n minimum"
+service powerd restart
+./batlab.sh log freebsd-deep-cstates
+./batlab.sh run idle  # In second terminal
 
-# Test CPU frequency scaling hypothesis  
-cat > config/fbsd-freq-scaling.sh << 'EOF'
-describe() { echo "FreeBSD with aggressive CPU frequency scaling"; }
-apply() {
-    # Set minimum available frequency
-    sysctl dev.cpu.0.freq=$(sysctl -n dev.cpu.0.freq_levels | cut -d/ -f2)
-    sysctl hw.acpi.cpu.cx_lowest=C3
-}
-EOF
+# Test CPU frequency scaling hypothesis
+sysctl dev.cpu.0.freq=$(sysctl -n dev.cpu.0.freq_levels | cut -d/ -f2)
+sysctl hw.acpi.cpu.cx_lowest=C3  
+./batlab.sh log freebsd-freq-scaling
+./batlab.sh run idle
 
 # Test WiFi power saving hypothesis
-cat > config/fbsd-wifi-powersave.sh << 'EOF'
-describe() { echo "FreeBSD with WiFi power management"; }
-apply() {
-    ifconfig wlan0 powersave
-    sysctl net.wlan.power_save=1
-}
-EOF
+ifconfig wlan0 powersave
+sysctl net.wlan.power_save=1
+./batlab.sh log freebsd-wifi-powersave  
+./batlab.sh run idle
 
-# Run systematic test of each hypothesis
-for config in fbsd-deep-cstates fbsd-freq-scaling fbsd-wifi-powersave; do
-    ./batlab.sh config apply "$config"
-    ./batlab.sh run "$config" -- idle --duration 600
-done
-
+# Compare results
 ./batlab.sh report --group-by config
 echo "Which hypothesis showed the most improvement?"
 ```
@@ -253,36 +236,32 @@ echo "Which hypothesis showed the most improvement?"
 #!/bin/sh
 # Comprehensive FreeBSD vs Linux battery life comparison
 
-# Linux baselines
-linux_configs="linux-baseline linux-tlp-optimized"
-
-# FreeBSD configurations to test
-freebsd_configs="fbsd-default fbsd-powersave fbsd-aggressive fbsd-laptop-mode"
+# Configuration names to test manually
+configs="linux-baseline linux-tlp freebsd-default freebsd-powersave freebsd-aggressive"
 
 # Representative workloads
 workloads="idle web_idle compile video_playback"
 
 echo "=== FreeBSD Battery Life Research Suite ==="
-echo "Comparing FreeBSD configurations against Linux baselines"
+echo "Manual testing protocol:"
 echo
 
-# Test all combinations
-for config in $linux_configs $freebsd_configs; do
+for config in $configs; do
+    echo "1. Configure system manually for: $config"
+    echo "2. For each workload:"
     for workload in $workloads; do
-        echo "Testing $config with $workload..."
-        ./batlab.sh config apply "$config"
-        ./batlab.sh run "$config" -- "$workload" --duration 600
-        sleep 30  # Let system stabilize between tests
+        echo "   - Terminal 1: ./batlab.sh log $config-$workload"
+        echo "   - Terminal 2: ./batlab.sh run $workload"
+        echo "   - Let run until battery dies or sufficient data collected"
     done
+    echo "3. Reboot/switch OS for next configuration"
+    echo
 done
 
-# Generate comparison report
-./batlab.sh report --group-by os,config --format table
-./batlab.sh export --csv freebsd_vs_linux_battery.csv
-
-echo 
-echo "=== Results Summary ==="
-echo "CSV exported to: freebsd_vs_linux_battery.csv"
+echo "After all tests:"
+echo "./batlab.sh report --group-by config --format table"
+echo "./batlab.sh export --csv freebsd_vs_linux_battery.csv"
+echo
 echo "Analysis: How close did the best FreeBSD config get to Linux baseline?"
 ```
 
@@ -330,12 +309,10 @@ Results are stored in `data/`:
 Optional `.env` file:
 
 ```bash
-SAMPLING_HZ=1                # Sample rate (0.5-2 Hz)
-RUN_DURATION_S=600          # Default run duration  
-STOP_ON_PCT_DROP=5          # Stop when battery drops this %
+SAMPLING_HZ=1                # Sample rate (0.5-2 Hz)  
 ```
 
-CLI flags override environment variables.
+No automatic stop conditions - you manually stop logging and workloads with Ctrl+C.
 
 ## Platform Notes
 
@@ -356,8 +333,8 @@ CLI flags override environment variables.
 # Add user to required groups (Linux)
 sudo usermod -a -G power,adm $USER
 
-# Or run specific commands with sudo
-sudo ./batlab.sh run config -- workload
+# Or run with sudo if needed
+sudo ./batlab.sh log config-name
 ```
 
 **No power data available:**
@@ -371,11 +348,11 @@ sudo ./batlab.sh run config -- workload
 
 ## Contributing
 
-Configurations and workloads are modular - add new ones by creating files in `config/` and `workload/` directories following the standard interface.
+Workloads are modular - add new ones by creating files in `workload/` directory following the standard interface.
 
 **Requirements:**
 - POSIX shell compatibility
-- Idempotent configuration scripts where possible  
+- Workloads must handle interruption gracefully
 - Proper error handling and logging
 
 ## License
