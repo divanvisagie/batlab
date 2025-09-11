@@ -18,21 +18,21 @@ FreeBSD laptop users often report poor battery life compared to Linux, but lack 
 
 ```bash
 # 1. Initialize
-./batlab init
+batlab init
 
 # 2. Manually configure your system power management
 # (Set CPU governors, powerd settings, C-states, etc.)
 
 # 3. Start logging (Terminal 1)
-./batlab log freebsd-powerd-aggressive
+batlab log freebsd-powerd-aggressive
 
 # 4. Run workload (Terminal 2) 
-./batlab run idle
+batlab run idle
 
 # 5. Stop both with Ctrl+C when done
 
 # 6. View results
-./batlab report
+batlab report
 ```
 
 ## How It Works
@@ -45,28 +45,35 @@ FreeBSD laptop users often report poor battery life compared to Linux, but lack 
 
 ## Installation
 
+### From Source (Recommended)
+
 ```bash
 git clone <repository>
 cd batlab
-./batlab init
+cargo install --path .
+batlab init
 ```
 
-**Requirements:**
+### System Requirements
 - Battery-powered laptop
-- FreeBSD or Linux
-- POSIX shell (works with FreeBSD base system)
+- FreeBSD or Linux (macOS partially supported for development)
+- Rust toolchain (for building from source)
+- Shell access for workload scripts
+
+**FreeBSD users:** Install Rust via `pkg install rust` or ports
+**Linux users:** Install Rust via package manager or [rustup.rs](https://rustup.rs/)
 
 ## Usage
 
 ### Basic Commands
 
 ```bash
-./batlab init                    # Set up directories
-./batlab log <config-name>       # Start logging (Terminal 1)
-./batlab run <workload>          # Run workload (Terminal 2)  
-./batlab report                  # View results
-./batlab export --csv data.csv   # Export for analysis
-./batlab list workloads          # See available workloads
+batlab init                      # Set up directories
+batlab log <config-name>         # Start logging (Terminal 1)
+batlab run <workload>            # Run workload (Terminal 2)  
+batlab report                    # View results
+batlab export --csv data.csv     # Export for analysis
+batlab list workloads            # See available workloads
 ```
 
 ### Example Research Workflow
@@ -74,8 +81,8 @@ cd batlab
 **Linux baseline:**
 ```bash
 # Configure Linux with default power management
-./batlab log linux-default
-./batlab run idle    # In second terminal, run until low battery
+batlab log linux-default
+batlab run idle    # In second terminal, run until low battery
 ```
 
 **FreeBSD comparison:**
@@ -85,14 +92,14 @@ sysctl hw.acpi.cpu.cx_lowest=C8
 powerd_flags="-a adaptive -b minimum"
 service powerd restart
 
-./batlab log freebsd-c8-minimum
-./batlab run idle    # Same workload, compare results
+batlab log freebsd-c8-minimum
+batlab run idle    # Same workload, compare results
 ```
 
 **Analysis:**
 ```bash
-./batlab report --group-by config
-./batlab export --csv comparison.csv
+batlab report --group-by config
+batlab export --csv comparison.csv
 # How close did FreeBSD get to Linux efficiency?
 ```
 
@@ -143,4 +150,4 @@ See `ARCHITECTURE.md` for technical implementation details.
 
 ## License
 
-3-clause BSD
+This project is licensed under the BSD 3-Clause License - see the [LICENSE](LICENSE) file for details.
