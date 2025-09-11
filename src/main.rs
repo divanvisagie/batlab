@@ -56,8 +56,8 @@ enum Commands {
     Log {
         /// Configuration name (letters, numbers, hyphens, underscores only)
         config_name: String,
-        /// Sampling frequency in Hz (0.1-10.0)
-        #[arg(long, default_value = "1.0")]
+        /// Sampling frequency in Hz (0.01-10.0)
+        #[arg(long, default_value = "0.0167")]
         hz: f32,
         /// Output file for logging (default: auto-generated)
         #[arg(short, long)]
@@ -367,8 +367,8 @@ fn cmd_log(
     }
 
     // Validate frequency
-    if !(0.1..=10.0).contains(&hz) {
-        eprintln!("❌ Sampling frequency must be between 0.1 and 10.0 Hz");
+    if !(0.01..=10.0).contains(&hz) {
+        eprintln!("❌ Sampling frequency must be between 0.01 and 10.0 Hz");
         process::exit(1);
     }
 
