@@ -1,19 +1,20 @@
-# Battery Test Harness — SPEC
+# Battery Test Harness — Technical Specification
 
 **Project codename:** `batlab`
 **Target hardware:** Laptops (any model/vendor)
-**Target OSes:** FreeBSD 14.3+ (first-class), Linux (modern distros)
-**Design ethos:** FreeBSD-first, POSIX shell, small, boring. One shell script, a couple of helpers. No daemons, no GUIs, no bash-isms.
+**Target OSes:** FreeBSD 14.3+ (primary), Linux (secondary)
+**Design ethos:** FreeBSD-first, POSIX shell, minimal dependencies
 
----
+## 1. Technical Requirements
 
-## 1. Problem Statement
+A POSIX shell-based tool for systematic battery efficiency measurement across FreeBSD and Linux configurations.
 
-We want to systematically measure and improve FreeBSD battery life on laptops, specifically targeting the gap between FreeBSD and Linux power efficiency. The research addresses the hypothesis that properly tuned FreeBSD can achieve competitive battery life, but lacks systematic measurement and optimal configuration guidance.
-
-The tool must capture telemetry while running workloads under manually configured power management settings, and produce comparable metrics to quantify the actual battery life gap between FreeBSD configurations and Linux baselines.
-
-**Primary research question:** Which FreeBSD configuration approaches Linux battery efficiency most closely, and under what workloads?
+**Core Requirements:**
+- Cross-platform telemetry collection (battery, CPU, memory, temperature)
+- Manual configuration approach (user controls system state)
+- Structured data output for analysis
+- Extensible workload system
+- FreeBSD base system compatibility
 
 ---
 
@@ -62,44 +63,22 @@ batlab.sh (CLI)
 ## 4. Command Line Interface (CLI)
 
 ```
-batlab.sh init
-batlab.sh log <config-name>
-batlab.sh run <workload> [args...]
-batlab.sh report [--group-by os,config,workload] [--format table|csv|json]
-batlab.sh export [--csv data/summary.csv] [--json data/summary.json]
-batlab.sh list workloads
+batlab init
+batlab log <config-name>
+batlab run <workload> [args...]
+batlab report [--group-by field] [--format table|csv|json]
+batlab export [--csv file] [--json file]
+batlab list workloads
 ```
 
-### 4.1 `init`
+**Command Specifications:**
 
-* Create the data directories; probe telemetry capabilities; print checklist.
-
-### 4.2 `log <config-name>`
-
-* Start continuous telemetry logging with user-provided configuration name.
-* Record current system snapshot (OS, kernel, hardware, system settings).
-* Sample at 1 Hz by default (configurable).
-* Run until manually stopped (Ctrl+C) or battery dies.
-* Configuration name is user-defined label for manual system configuration.
-
-### 4.3 `run <workload> [args...]`
-
-* Run workload in separate terminal while logger runs.
-* Workload runs until completion or manual interrupt.
-* No automatic coordination with logger - user manages both processes.
-
-### 4.4 `report`
-
-* Scan `data/*.jsonl` and print a table with averages and confidence bands (mean/median/p95), grouped as requested.
-* Support filtering by any metadata fields.
-
-### 4.5 `list workloads`
-
-* List available workloads with descriptions.
-
-### 4.6 `export`
-
-* Emit CSV/JSON summaries for external tools.
+- `init`: Initialize directories, probe capabilities
+- `log <config-name>`: Start telemetry logging with user-defined configuration label
+- `run <workload>`: Execute workload (separate process from logger)
+- `report`: Analyze collected data, generate summary statistics
+- `export`: Export structured data for external analysis
+- `list`: Enumerate available workloads
 
 ---
 
@@ -217,141 +196,88 @@ Columns: `run_id, os, config, workload, duration_s, avg_watts, median_watts, p95
 
 ---
 
-## 8. Workloads (extensible)
+## 8. Workload System
 
-The workload system supports any executable workload. Built-in workloads include:
+**Interface Requirements:**
+- Each workload in `workload/<name>.sh`
+- Standard functions: `describe()`, `run(args...)`
+- Signal handling for clean interruption
+- Parameter validation and error handling
 
-* `idle`: configurable sleep with screen on.
-* `web_idle`: loop rendering text pages with configurable cadence.
-* `compile`: compile projects with configurable parallelism and iterations.
-* `video_playback`: play media files with configurable parameters.
-* `wifi_throughput`: network throughput tests with configurable patterns.
-* `stress`: CPU/memory stress testing with configurable intensity.
+**Built-in Workloads:**
+- `idle` - System idle with screen active
+- `stress` - Configurable CPU/memory stress test
 
-Each workload resides in `workload/<name>.sh`, implements standard interface:
-* `describe()` - return description
-* `run(args...)` - execute workload until completion or interrupt
-* Must exit cleanly when signaled (Ctrl+C).
-* Can define custom parameters and validation.
+**Execution Model:**
+- Independent process from telemetry logger
+- User manages both logger and workload processes
+- No automatic coordination between processes
 
-**Usage pattern**: Run `batlab.sh log <config-name>` in one terminal, then `batlab.sh run <workload>` in another.
+## 9. Configuration System
 
----
+**Manual Configuration Approach:**
+- User configures system power management manually
+- Tool records user-provided configuration name only
+- No automated system changes by tool
 
-## 9. Manual Configuration System
-
-### 9.1 Configuration Approach
-
-**User responsibility**: All system configuration is done manually by the researcher.
-
-**Tool responsibility**: Record the user-provided configuration name and current system state.
-
-### 9.2 Workflow
-
-1. **Manual setup**: User configures system power management manually (governors, C-states, services, etc.)
-2. **Start logging**: `batlab.sh log my-config-name` - begins telemetry collection
-3. **Run workload**: `batlab.sh run workload-name` (in separate terminal)
-4. **Stop when done**: Ctrl+C to stop logging, or let battery drain completely
-5. **Repeat**: Change configuration manually, repeat with new config name
-
-### 9.3 Configuration Examples
-
-Example configuration names (user-defined):
-* `freebsd-default` - Stock FreeBSD installation
-* `freebsd-powerd-min` - powerd with minimum power settings
-* `freebsd-c8-states` - Aggressive C-state configuration  
-* `linux-baseline` - Default Linux distribution settings
-* `linux-tlp-optimized` - Linux with TLP power optimization
+**Configuration Workflow:**
+1. Manual system configuration (powerd, governors, C-states, etc.)
+2. Start telemetry: `batlab log <config-name>`
+3. Execute workload: `batlab run <workload>` (separate terminal)
+4. Manual termination or battery depletion
 
 ---
 
-## 10. Error Handling & Edge Cases
+## 10. Error Handling
 
-* Telemetry unavailable → warn once, switch to slope fallback.
-* Sampling gaps → mark sample invalid, do not impute.
-* Workload crash → still finalize run and compute metrics on available window.
-* Permission denied on sysfs → print remedial hints (group membership or `sudo`), mark controls as best‑effort.
+- **Telemetry unavailable**: Graceful fallback to alternative sources
+- **Sampling gaps**: Mark invalid samples, continue collection
+- **Workload failure**: Complete data collection on available samples
+- **Permission errors**: Provide remediation guidance, continue best-effort
 
----
+## 11. Security Model
 
-## 11. Security & Safety
+- **Minimal privileges**: Brief `sudo` only when required
+- **No persistent root**: Refuse root execution without explicit override
+- **User responsibility**: Manual configuration means user controls system changes
 
-* No persistent root requirements; only brief `sudo` for specific steps when needed. Refuse to continue if invoked as root for entire run unless `--i‑am‑sure` set.
-* Profiles must log every mutation they make to system settings.
+## 12. Configuration Options
 
----
-
-## 12. Configuration
-
-Simple `.env` file read by `batlab.sh`:
-
+Environment variables in optional `.env` file:
 ```
-SAMPLING_HZ=1
-RUN_DURATION_S=600
-STOP_ON_PCT_DROP=5
+SAMPLING_HZ=1    # Sample rate (0.5-2 Hz)
 ```
 
-CLI flags override env.
+## 13. Output Formats
 
----
+- **Real-time**: JSONL streaming during collection
+- **Summary**: Tabular reports with statistical aggregation  
+- **Export**: CSV/JSON for external analysis tools
+- **Data validation**: Mark low-confidence runs (<50% valid samples)
 
-## 13. Reporting Details
-
-* Aggregation uses only valid `watts` samples; if <50% valid, mark run as "low confidence".
-* Print table with aligned columns; provide `--csv`/`--json` outputs.
-* Optional: generate plots (PNG) of watts over time and boxplots per group. (Implemented in a separate `report.py` to keep shell pure.)
-
----
-
-## 14. Directory Layout
+## 14. Directory Structure
 
 ```
-.
-├── batlab.sh
-├── lib/
-│   └── telemetry.sh
-
-├── workload/
-│   ├── idle.sh
-│   ├── web_idle.sh
-│   ├── compile.sh
-│   ├── video_playback.sh
-│   └── [unlimited custom workloads]
-├── wifi_throughput.sh
-│   └── stress.sh
-├── data/
-├── report/
-└── SPEC.md
+├── batlab                 # Main CLI interface
+├── lib/telemetry.sh       # Cross-platform data collection
+├── workload/              # Extensible workload scripts
+├── data/                  # Output data files
+├── ARCHITECTURE.md        # Implementation details
+└── SPEC.md               # This specification
 ```
-
----
 
 ## 15. Acceptance Criteria
 
-* **Telemetry sanity**: On Linux with upower, `avg_watts` is non‑NaN for a 5‑minute idle run; on FreeBSD with acpiconf, same.
-* **Repeatability**: Two consecutive `idle` runs under the same configuration produce `avg_watts` within ±10%.
-* **Comparability**: `report` groups and shows deltas between OS/config/workload combinations.
-* **Portability**: Runs natively on FreeBSD 14.3+ base system; supports mainstream Linux distributions.
-* **POSIX Compliance**: Pure POSIX shell - no bash-isms or GNU-specific tools required.
-* **Research value**: Provides actionable data for FreeBSD power management improvement.
+- **Cross-platform**: Native FreeBSD operation, Linux compatibility
+- **POSIX compliance**: Pure shell, no bash-isms or GNU tools
+- **Data integrity**: Consistent telemetry collection across platforms
+- **Repeatability**: <±10% variance for identical configurations
+- **Extensibility**: Simple addition of new workloads and telemetry sources
 
----
+## 16. Implementation Notes
 
-## 16. Nice‑to‑Have (later)
+See `ARCHITECTURE.md` for detailed technical implementation, cross-platform considerations, and development guidelines.
 
-* Optional `turbostat`/`pmcstat` channels recorded to sidecar files.
-* HTML report with sparkline charts.
+## 17. License
 
----
-
-## 17. Risks
-
-* Firmware/EC quirks may lie about `Present rate` under low draw.
-* iGPU power states differ across kernels; results may reflect driver behavior more than configurations.
-* Ambient temperature variance can skew idle results.
-
----
-
-## 18. License & Contribution
-
-* 3-clause BSD. PRs must maintain POSIX shell compatibility and FreeBSD-first approach. No bash-isms, no GNU-specific tools. Test on FreeBSD base system first. Also: never suggest `nano`.
+3-clause BSD. Contributions must maintain POSIX compatibility and FreeBSD-first approach.

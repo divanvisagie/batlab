@@ -59,13 +59,13 @@ usage() {
 batlab $VERSION - Battery Test Harness for FreeBSD vs Linux Research
 
 USAGE:
-    $0 init
-    $0 log <config-name>
-    $0 run <workload> [args...]
-    $0 report [--group-by os,config,workload] [--format table|csv|json]
-    $0 export [--csv file.csv] [--json file.json]
-    $0 list workloads
-    $0 help
+    batlab init
+    batlab log <config-name>
+    batlab run <workload> [args...]
+    batlab report [--group-by os,config,workload] [--format table|csv|json]
+    batlab export [--csv file.csv] [--json file.json]
+    batlab list workloads
+    batlab help
 
 COMMANDS:
     init                Initialize directories and check system capabilities
@@ -78,15 +78,15 @@ COMMANDS:
 
 WORKFLOW:
     1. Manually configure your system power management
-    2. Terminal 1: $0 log my-config-name
-    3. Terminal 2: $0 run workload-name
+    2. Terminal 1: batlab log my-config-name
+    3. Terminal 2: batlab run workload-name
     4. Stop both with Ctrl+C when done
 
 EXAMPLES:
-    $0 init
-    $0 log freebsd-powerd-min     # Terminal 1
-    $0 run idle                   # Terminal 2
-    $0 report --group-by config
+    batlab init
+    batlab log freebsd-powerd-min     # Terminal 1
+    batlab run idle                   # Terminal 2
+    batlab report --group-by config
 
 For detailed usage see README.md
 EOF
@@ -399,8 +399,8 @@ EOF
     log_success "Initialization complete!"
     log_info "Next steps:"
     log_info "  1. Manually configure your system power management"
-    log_info "  2. Run: $0 log <config-name> (in terminal 1)"
-    log_info "  3. Run: $0 run <workload> (in terminal 2)"
+    log_info "  2. Run: batlab log <config-name> (in terminal 1)"
+    log_info "  3. Run: batlab run <workload> (in terminal 2)"
 }
 
 create_example_workloads() {
@@ -497,7 +497,7 @@ cmd_log() {
 
     if [ -z "$config_name" ]; then
         log_error "Configuration name required"
-        log_error "Usage: $0 log <config-name>"
+        log_error "Usage: batlab log <config-name>"
         return 1
     fi
 
@@ -567,7 +567,7 @@ cmd_run() {
 
     if [ -z "$workload_name" ]; then
         log_error "Workload name required"
-        log_error "Usage: $0 run <workload> [args...]"
+        log_error "Usage: batlab run <workload> [args...]"
         return 1
     fi
 
@@ -636,8 +636,8 @@ cmd_report() {
     if [ "$data_files" -eq 0 ]; then
         log_warn "No test data found in $DATA_DIR"
         log_info "Run some tests first:"
-        log_info "  Terminal 1: $0 log <config-name>"
-        log_info "  Terminal 2: $0 run <workload>"
+        log_info "  Terminal 1: batlab log <config-name>"
+        log_info "  Terminal 2: batlab run <workload>"
         return 0
     fi
 
@@ -772,11 +772,11 @@ cmd_list() {
                 done
             else
                 log_warn "No workloads found in $WORKLOAD_DIR"
-                log_info "Run '$0 init' to create example workloads"
+                log_info "Run 'batlab init' to create example workloads"
             fi
             ;;
         *)
-            log_error "Usage: $0 list workloads"
+            log_error "Usage: batlab list workloads"
             return 1
             ;;
     esac
