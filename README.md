@@ -2,7 +2,7 @@
 
 A tool for measuring and comparing battery life between FreeBSD and Linux configurations on laptops.
 
-![batlab logo](logo-256.png)
+![batlab logo](docs/logo-256.png)
 
 ## Purpose
 
