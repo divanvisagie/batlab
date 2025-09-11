@@ -8,10 +8,9 @@
 //! - `/proc/` filesystem for system metrics
 //! - `/sys/class/thermal/` for temperature sensors
 
-use crate::{BatteryError, BatteryInfo, BatteryCapacity, TelemetryError};
+use crate::{BatteryCapacity, BatteryError, BatteryInfo, TelemetryError};
 use std::fs;
 use std::process::Command;
-use std::str::FromStr;
 
 /// Get battery information using Linux-specific methods
 ///
@@ -22,19 +21,32 @@ use std::str::FromStr;
 pub fn get_battery_info() -> Result<BatteryInfo, BatteryError> {
     // Try upower first (most reliable and handles multiple batteries)
     upower_battery()
-        .or_else(|_| sysfs_battery())
-        .map_err(|_| BatteryError::NotFound)
+        .or_else(|err| {
+            // Preserve Charging error, try sysfs for other errors
+            match err {
+                BatteryError::Charging => Err(err),
+                _ => sysfs_battery(),
+            }
+        })
+        .map_err(|err| {
+            // Preserve Charging error, convert others to NotFound
+            match err {
+                BatteryError::Charging => err,
+                _ => BatteryError::NotFound,
+            }
+        })
 }
 
 /// Get battery info via upower command
 fn upower_battery() -> Result<BatteryInfo, BatteryError> {
     // First, find battery devices
-    let devices_output = Command::new("upower")
-        .arg("-e")
-        .output()
-        .map_err(|_| BatteryError::ToolUnavailable {
-            tool: "upower".to_string(),
-        })?;
+    let devices_output =
+        Command::new("upower")
+            .arg("-e")
+            .output()
+            .map_err(|_| BatteryError::ToolUnavailable {
+                tool: "upower".to_string(),
+            })?;
 
     if !devices_output.status.success() {
         return Err(BatteryError::ToolUnavailable {
@@ -64,8 +76,11 @@ fn upower_battery() -> Result<BatteryInfo, BatteryError> {
 
     let info = String::from_utf8_lossy(&info_output.stdout);
 
-    // Check if battery is charging
-    if info.lines().any(|line| line.contains("state") && line.contains("charging")) {
+    // Check if battery is charging (look for the specific state line, not history)
+    // Must check for exact "charging" word, not substring (to avoid matching "discharging")
+    if info.lines().any(|line| {
+        line.trim().starts_with("state:") && line.split_whitespace().any(|word| word == "charging")
+    }) {
         return Err(BatteryError::Charging);
     }
 
@@ -170,9 +185,10 @@ fn sysfs_get_power_watts(battery_path: &std::path::Path) -> Result<f32, BatteryE
     let voltage_path = battery_path.join("voltage_now");
     let current_path = battery_path.join("current_now");
 
-    if let (Ok(voltage_str), Ok(current_str)) =
-        (fs::read_to_string(&voltage_path), fs::read_to_string(&current_path))
-    {
+    if let (Ok(voltage_str), Ok(current_str)) = (
+        fs::read_to_string(&voltage_path),
+        fs::read_to_string(&current_path),
+    ) {
         if let (Ok(voltage_uv), Ok(current_ua)) = (
             voltage_str.trim().parse::<f32>(),
             current_str.trim().parse::<f32>(),
@@ -245,10 +261,7 @@ pub fn get_memory_usage() -> Result<f32, TelemetryError> {
 /// Parse memory value in kB from meminfo line
 fn parse_meminfo_kb(line: &str) -> Option<u64> {
     // Format: "MemTotal:       16384000 kB"
-    line.split_whitespace()
-        .nth(1)?
-        .parse()
-        .ok()
+    line.split_whitespace().nth(1)?.parse().ok()
 }
 
 /// Get system temperature from available thermal sensors
@@ -333,12 +346,13 @@ pub fn get_battery_capacity() -> Result<Option<BatteryCapacity>, BatteryError> {
 
 /// Get battery capacity via upower
 fn upower_battery_capacity() -> Result<BatteryCapacity, BatteryError> {
-    let devices_output = Command::new("upower")
-        .arg("-e")
-        .output()
-        .map_err(|_| BatteryError::ToolUnavailable {
-            tool: "upower".to_string(),
-        })?;
+    let devices_output =
+        Command::new("upower")
+            .arg("-e")
+            .output()
+            .map_err(|_| BatteryError::ToolUnavailable {
+                tool: "upower".to_string(),
+            })?;
 
     let devices = String::from_utf8_lossy(&devices_output.stdout);
     let battery_path = devices
@@ -379,7 +393,9 @@ fn sysfs_battery_capacity() -> Result<BatteryCapacity, BatteryError> {
 }
 
 /// Get capacity info from specific sysfs battery path
-fn sysfs_battery_capacity_info(battery_path: &std::path::Path) -> Result<BatteryCapacity, BatteryError> {
+fn sysfs_battery_capacity_info(
+    battery_path: &std::path::Path,
+) -> Result<BatteryCapacity, BatteryError> {
     let mut design_wh = None;
     let mut full_wh = None;
 
@@ -450,8 +466,14 @@ Device: /org/freedesktop/UPower/devices/battery_BAT0
 
     #[test]
     fn test_parse_meminfo_kb() {
-        assert_eq!(parse_meminfo_kb("MemTotal:       16384000 kB"), Some(16384000));
-        assert_eq!(parse_meminfo_kb("MemAvailable:    8192000 kB"), Some(8192000));
+        assert_eq!(
+            parse_meminfo_kb("MemTotal:       16384000 kB"),
+            Some(16384000)
+        );
+        assert_eq!(
+            parse_meminfo_kb("MemAvailable:    8192000 kB"),
+            Some(8192000)
+        );
         assert_eq!(parse_meminfo_kb("Invalid line"), None);
     }
 

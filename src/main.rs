@@ -3,13 +3,17 @@
 //! Cross-platform battery efficiency measurement for FreeBSD vs Linux research.
 //! Manual configuration approach - user configures system, tool records data.
 
-use batlab::{collect_telemetry, generate_run_id, get_system_info, TelemetryError, TelemetrySample, RunMetadata};
+use batlab::{
+    collect_telemetry, generate_run_id, get_battery_info, get_system_info, BatteryError,
+    RunMetadata, TelemetryError, TelemetrySample,
+};
 use chrono::Utc;
 use clap::{Parser, Subcommand, ValueEnum};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
+use std::io::{self, BufRead};
 use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -30,13 +34,15 @@ enum OutputFormat {
 #[command(name = "batlab")]
 #[command(version = VERSION)]
 #[command(about = "Battery Test Harness for FreeBSD vs Linux Research")]
-#[command(long_about = "Cross-platform battery efficiency measurement for FreeBSD vs Linux research.\n\
+#[command(
+    long_about = "Cross-platform battery efficiency measurement for FreeBSD vs Linux research.\n\
 Manual configuration approach - user configures system, tool records data.\n\n\
 WORKFLOW:\n\
 1. Manually configure your system power management\n\
 2. Terminal 1: batlab log my-config-name\n\
 3. Terminal 2: batlab run workload-name\n\
-4. Stop both with Ctrl+C when done")]
+4. Stop both with Ctrl+C when done"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -149,11 +155,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match cli.command {
         Commands::Init => cmd_init(&project_dir, &data_dir, &workload_dir),
-        Commands::Log { config_name, hz, output } => cmd_log(&config_name, hz, output.as_deref(), &data_dir),
+        Commands::Log {
+            config_name,
+            hz,
+            output,
+        } => cmd_log(&config_name, hz, output.as_deref(), &data_dir),
         Commands::Run { workload, args } => cmd_run(&workload, &args, &workload_dir),
-        Commands::Report { group_by, format, output, baseline, min_samples } => {
-            cmd_report(&data_dir, &group_by, &format, output.as_deref(), baseline.as_deref(), min_samples)
-        }
+        Commands::Report {
+            group_by,
+            format,
+            output,
+            baseline,
+            min_samples,
+        } => cmd_report(
+            &data_dir,
+            &group_by,
+            &format,
+            output.as_deref(),
+            baseline.as_deref(),
+            min_samples,
+        ),
         Commands::Export { format, output } => cmd_export(&data_dir, &format, output.as_deref()),
         Commands::List { item } => cmd_list(&item, &workload_dir),
         Commands::Sample => cmd_sample(),
@@ -162,7 +183,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Initialize project directories and check capabilities
-fn cmd_init(project_dir: &Path, data_dir: &Path, workload_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+fn cmd_init(
+    project_dir: &Path,
+    data_dir: &Path,
+    workload_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     println!("🔋 Initializing batlab battery test harness...");
 
     // Create directories
@@ -329,7 +354,12 @@ run() {
 }
 
 /// Start telemetry logging
-fn cmd_log(config_name: &str, hz: f32, output_file: Option<&str>, data_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+fn cmd_log(
+    config_name: &str,
+    hz: f32,
+    output_file: Option<&str>,
+    data_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     // Validate config name
     if config_name.is_empty() || config_name.chars().any(|c| c.is_whitespace()) {
         eprintln!("❌ Configuration name cannot be empty or contain whitespace");
@@ -341,6 +371,9 @@ fn cmd_log(config_name: &str, hz: f32, output_file: Option<&str>, data_dir: &Pat
         eprintln!("❌ Sampling frequency must be between 0.1 and 10.0 Hz");
         process::exit(1);
     }
+
+    // Wait for battery to be available and not charging
+    wait_for_battery_ready()?;
 
     // Create data directory if it doesn't exist
     if !data_dir.exists() {
@@ -389,7 +422,7 @@ fn cmd_log(config_name: &str, hz: f32, output_file: Option<&str>, data_dir: &Pat
         fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .open(&jsonl_file)?
+            .open(&jsonl_file)?,
     );
 
     // Calculate sleep duration
@@ -450,7 +483,11 @@ fn cmd_log(config_name: &str, hz: f32, output_file: Option<&str>, data_dir: &Pat
 }
 
 /// Run workload
-fn cmd_run(workload_name: &str, args: &[String], workload_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+fn cmd_run(
+    workload_name: &str,
+    args: &[String],
+    workload_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     let workload_file = workload_dir.join(format!("{}.sh", workload_name));
 
     if !workload_file.exists() {
@@ -481,7 +518,10 @@ fn cmd_run(workload_name: &str, args: &[String], workload_dir: &Path) -> Result<
         println!("✅ Workload completed successfully");
         Ok(())
     } else {
-        eprintln!("❌ Workload failed with exit code: {}", status.code().unwrap_or(-1));
+        eprintln!(
+            "❌ Workload failed with exit code: {}",
+            status.code().unwrap_or(-1)
+        );
         process::exit(1);
     }
 }
@@ -578,7 +618,8 @@ fn get_workload_description(workload_path: &Path) -> Option<String> {
         // Look for describe() function and extract the echo statement
         for line in content.lines() {
             if line.trim().starts_with("echo ") && content.contains("describe()") {
-                let desc = line.trim()
+                let desc = line
+                    .trim()
                     .strip_prefix("echo ")?
                     .trim_matches('"')
                     .trim_matches('\'');
@@ -591,6 +632,9 @@ fn get_workload_description(workload_path: &Path) -> Option<String> {
 
 /// Handle single telemetry sample collection
 fn cmd_sample() -> Result<(), Box<dyn std::error::Error>> {
+    // Wait for battery to be available and not charging
+    wait_for_battery_ready()?;
+
     match collect_telemetry() {
         Ok(sample) => {
             println!("{}", serde_json::to_string_pretty(&sample)?);
@@ -601,25 +645,23 @@ fn cmd_sample() -> Result<(), Box<dyn std::error::Error>> {
 
             // Provide helpful error messages based on error type
             match &e {
-                TelemetryError::Battery(battery_err) => {
-                    match battery_err {
-                        batlab::BatteryError::NotFound => {
-                            eprintln!("💡 Hint: Make sure you're running on a laptop with a battery");
-                            #[cfg(target_os = "freebsd")]
-                            eprintln!("        Try: pkg install acpi (for acpiconf command)");
-                            #[cfg(target_os = "linux")]
-                            eprintln!("        Try: which upower (check if upower is installed)");
-                        }
-                        batlab::BatteryError::Charging => {
-                            eprintln!("💡 Hint: Unplug AC adapter for accurate battery measurements");
-                        }
-                        batlab::BatteryError::PermissionDenied { tool } => {
-                            eprintln!("💡 Hint: Permission denied accessing {}", tool);
-                            eprintln!("        You may need to run with appropriate permissions");
-                        }
-                        _ => {}
+                TelemetryError::Battery(battery_err) => match battery_err {
+                    batlab::BatteryError::NotFound => {
+                        eprintln!("💡 Hint: Make sure you're running on a laptop with a battery");
+                        #[cfg(target_os = "freebsd")]
+                        eprintln!("        Try: pkg install acpi (for acpiconf command)");
+                        #[cfg(target_os = "linux")]
+                        eprintln!("        Try: which upower (check if upower is installed)");
                     }
-                }
+                    batlab::BatteryError::Charging => {
+                        eprintln!("💡 Hint: Unplug AC adapter for accurate battery measurements");
+                    }
+                    batlab::BatteryError::PermissionDenied { tool } => {
+                        eprintln!("💡 Hint: Permission denied accessing {}", tool);
+                        eprintln!("        You may need to run with appropriate permissions");
+                    }
+                    _ => {}
+                },
                 TelemetryError::Unavailable { resource } => {
                     eprintln!("💡 Hint: {} not available on this system", resource);
                 }
@@ -627,6 +669,53 @@ fn cmd_sample() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             process::exit(1);
+        }
+    }
+}
+
+/// Wait for battery to be ready (available and not charging)
+/// This function will loop until the battery is detected and not charging,
+/// prompting the user to unplug AC adapter when needed.
+fn wait_for_battery_ready() -> Result<(), Box<dyn std::error::Error>> {
+    loop {
+        match get_battery_info() {
+            Ok(_) => {
+                // Battery is available and not charging
+                println!("✅ Battery detected and ready for measurements");
+                return Ok(());
+            }
+            Err(BatteryError::NotFound) => {
+                eprintln!("❌ No battery found on this system");
+                eprintln!("💡 Hint: Make sure you're running on a laptop with a battery");
+                #[cfg(target_os = "freebsd")]
+                eprintln!("        Try: pkg install acpi (for acpiconf command)");
+                #[cfg(target_os = "linux")]
+                eprintln!("        Try: which upower (check if upower is installed)");
+                process::exit(1);
+            }
+            Err(BatteryError::Charging) => {
+                println!("🔌 Battery is currently charging");
+                println!(
+                    "⚠️  For accurate battery life measurements, the AC adapter must be unplugged"
+                );
+                println!("📋 Please unplug your AC adapter and press Enter to continue...");
+
+                // Wait for user input
+                let stdin = io::stdin();
+                let _ = stdin.lock().read_line(&mut String::new())?;
+
+                println!("🔄 Checking battery status...");
+                // Continue the loop to check again
+            }
+            Err(BatteryError::PermissionDenied { tool }) => {
+                eprintln!("❌ Permission denied accessing {}", tool);
+                eprintln!("💡 Hint: You may need to run with appropriate permissions");
+                process::exit(1);
+            }
+            Err(other) => {
+                eprintln!("❌ Battery error: {}", other);
+                process::exit(1);
+            }
         }
     }
 }
@@ -639,7 +728,10 @@ fn cmd_metadata() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Load and summarize all runs from the data directory
-fn load_run_summaries(data_dir: &Path, min_samples: usize) -> Result<Vec<RunSummary>, Box<dyn std::error::Error>> {
+fn load_run_summaries(
+    data_dir: &Path,
+    min_samples: usize,
+) -> Result<Vec<RunSummary>, Box<dyn std::error::Error>> {
     let mut summaries = Vec::new();
 
     if !data_dir.exists() {
@@ -672,7 +764,10 @@ fn load_run_summaries(data_dir: &Path, min_samples: usize) -> Result<Vec<RunSumm
 }
 
 /// Analyze a single run file and generate summary
-fn analyze_run(jsonl_path: &Path, min_samples: usize) -> Result<Option<RunSummary>, Box<dyn std::error::Error>> {
+fn analyze_run(
+    jsonl_path: &Path,
+    min_samples: usize,
+) -> Result<Option<RunSummary>, Box<dyn std::error::Error>> {
     let content = fs::read_to_string(jsonl_path)?;
     let samples: Vec<TelemetrySample> = content
         .lines()
@@ -775,7 +870,11 @@ fn parse_run_id_fallback(run_id: &str) -> (String, Option<String>, String) {
 
     match parts.len() {
         4 => (parts[3].to_string(), None, parts[2].to_string()),
-        5 => (parts[3].to_string(), Some(parts[4].to_string()), parts[2].to_string()),
+        5 => (
+            parts[3].to_string(),
+            Some(parts[4].to_string()),
+            parts[2].to_string(),
+        ),
         _ => ("unknown".to_string(), None, "unknown".to_string()),
     }
 }
@@ -807,7 +906,10 @@ fn generate_grouped_stats(
             _ => &summary.config,
         };
 
-        groups.entry(group_key.to_string()).or_default().push(summary);
+        groups
+            .entry(group_key.to_string())
+            .or_default()
+            .push(summary);
     }
 
     // Calculate baseline average watts for comparison
@@ -826,13 +928,11 @@ fn generate_grouped_stats(
         let count = watts_values.len();
         let mean = watts_values.iter().sum::<f32>() / count as f32;
 
-        let variance = watts_values.iter()
-            .map(|x| (x - mean).powi(2))
-            .sum::<f32>() / count as f32;
+        let variance = watts_values.iter().map(|x| (x - mean).powi(2)).sum::<f32>() / count as f32;
         let stddev = variance.sqrt();
 
         let efficiency_vs_baseline = baseline_watts.map(|baseline| {
-            ((baseline - mean) / baseline) * 100.0  // Positive = more efficient than baseline
+            ((baseline - mean) / baseline) * 100.0 // Positive = more efficient than baseline
         });
 
         let stats = GroupedStats {
@@ -900,7 +1000,8 @@ fn generate_table_report(report: &ComparisonReport) -> String {
     groups.sort_by(|a, b| a.group_name.cmp(&b.group_name));
 
     for stats in groups {
-        let vs_baseline = stats.efficiency_vs_baseline
+        let vs_baseline = stats
+            .efficiency_vs_baseline
             .map(|x| format!("{:+.1}", x))
             .unwrap_or_else(|| "-".to_string());
 

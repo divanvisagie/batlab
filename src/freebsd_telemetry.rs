@@ -7,7 +7,7 @@
 //! - `sysctl` for system metrics
 //! - Graceful fallbacks when tools are unavailable
 
-use crate::{BatteryError, BatteryInfo, BatteryCapacity, TelemetryError};
+use crate::{BatteryCapacity, BatteryError, BatteryInfo, TelemetryError};
 use std::process::Command;
 use std::str::FromStr;
 
@@ -42,7 +42,10 @@ fn acpiconf_battery() -> Result<BatteryInfo, BatteryError> {
     let info = String::from_utf8_lossy(&output.stdout);
 
     // Check if battery is charging (may affect measurements)
-    if info.lines().any(|line| line.contains("State") && line.contains("charging")) {
+    // Use word boundary matching to avoid false positives with "discharging"
+    if info.lines().any(|line| {
+        line.contains("State") && line.split_whitespace().any(|word| word == "charging")
+    }) {
         return Err(BatteryError::Charging);
     }
 
@@ -50,8 +53,7 @@ fn acpiconf_battery() -> Result<BatteryInfo, BatteryError> {
     let percentage = parse_acpiconf_field(&info, "Remaining capacity")?;
 
     // Parse present rate (in mW) and convert to watts
-    let rate_mw = parse_acpiconf_field(&info, "Present rate")
-        .unwrap_or(0.0); // Present rate may be 0 when idle
+    let rate_mw = parse_acpiconf_field(&info, "Present rate").unwrap_or(0.0); // Present rate may be 0 when idle
 
     let watts = if rate_mw > 0.0 { rate_mw / 1000.0 } else { 0.0 };
 
@@ -68,12 +70,11 @@ fn parse_acpiconf_field(text: &str, field_name: &str) -> Result<f32, BatteryErro
         .find(|line| line.contains(field_name))
         .and_then(|line| {
             // Extract the numeric part (handle formats like "85%" or "1250 mW")
-            line.split_whitespace()
-                .find_map(|word| {
-                    // Try to parse as float, removing % suffix if present
-                    let clean_word = word.trim_end_matches('%');
-                    clean_word.parse::<f32>().ok()
-                })
+            line.split_whitespace().find_map(|word| {
+                // Try to parse as float, removing % suffix if present
+                let clean_word = word.trim_end_matches('%');
+                clean_word.parse::<f32>().ok()
+            })
         })
         .ok_or_else(|| BatteryError::ParseError {
             field: field_name.to_string(),
@@ -84,8 +85,8 @@ fn parse_acpiconf_field(text: &str, field_name: &str) -> Result<f32, BatteryErro
 /// Fallback battery info via sysctl
 fn sysctl_battery() -> Result<BatteryInfo, BatteryError> {
     // Try to get battery percentage from sysctl
-    let percentage = get_sysctl_f32("hw.acpi.battery.life")
-        .map_err(|_| BatteryError::ToolUnavailable {
+    let percentage =
+        get_sysctl_f32("hw.acpi.battery.life").map_err(|_| BatteryError::ToolUnavailable {
             tool: "sysctl battery".to_string(),
         })?;
 
