@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Battery Report: {{CONFIG_NAME}}</title>
+    <style>
+        body {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #ffffff;
+            color: #333333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #ffffff;
+            padding: 30px;
+            border-radius: 10px;
+            border: 2px solid #cc0000;
+        }
+        h1 {
+            color: #cc0000;
+            border-bottom: 3px solid #cc0000;
+            padding-bottom: 10px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+        h2 {
+            color: #cc0000;
+            margin-top: 30px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+        .metadata {
+            background: #f8f8f8;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 20px 0;
+            border-left: 4px solid #cc0000;
+        }
+        .metadata table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+        .metadata td {
+            padding: 8px;
+            border-bottom: 1px solid #cccccc;
+        }
+        .metadata td:first-child {
+            font-weight: bold;
+            color: #cc0000;
+            width: 150px;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: #ffffff;
+            border: 2px solid #cc0000;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        .stat-card h3 {
+            margin-top: 0;
+            color: #cc0000;
+            border-bottom: 2px solid #cc0000;
+            padding-bottom: 5px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+        .stat-value {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #cc0000;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+        .graph-container {
+            text-align: center;
+            margin: 30px 0;
+            background: #ffffff;
+            padding: 20px;
+            border-radius: 8px;
+            border: 2px solid #cc0000;
+        }
+        .graph-container img {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #cccccc;
+            border-radius: 4px;
+        }
+        .back-link {
+            display: inline-block;
+            margin: 20px 0;
+            padding: 10px 20px;
+            background: #cc0000;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            transition: background 0.3s;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+        .back-link:hover {
+            background: #990000;
+        }
+        .footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #cccccc;
+            color: #666666;
+            font-size: 0.9em;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="../index.html" class="back-link">← Back to Reports Index</a>
+
+        <h1>Battery Test Report: {{CONFIG_NAME}}</h1>
+
+        <div class="metadata">
+            <h2>Test Information</h2>
+            <table>
+                <tr><td>Configuration</td><td>{{CONFIG_NAME}}</td></tr>
+                <tr><td>Host</td><td>{{HOST}}</td></tr>
+                <tr><td>Operating System</td><td>{{OS}}</td></tr>
+                <tr><td>Start Time</td><td>{{START_TIME}}</td></tr>
+                <tr><td>Run ID</td><td>{{RUN_ID}}</td></tr>
+                <tr><td>Sampling Rate</td><td>{{SAMPLING_HZ}} Hz</td></tr>
+            </table>
+        </div>
+
+        <div class="stats">
+            <div class="stat-card">
+                <h3>Test Duration</h3>
+                <div class="stat-value">{{DURATION}} hours</div>
+                <p>Total test runtime with {{SAMPLES}} data samples</p>
+            </div>
+
+            <div class="stat-card">
+                <h3>Battery Performance</h3>
+                <div class="stat-value">{{START_PCT}}% → {{END_PCT}}%</div>
+                <p>Drained {{BATTERY_DRAIN}}% at {{DRAIN_RATE}}%/hour</p>
+            </div>
+
+            <div class="stat-card">
+                <h3>Power Consumption</h3>
+                <div class="stat-value">{{AVG_WATTS}}W average</div>
+                <p>Range: {{MIN_WATTS}}W - {{MAX_WATTS}}W</p>
+            </div>
+
+            <div class="stat-card">
+                <h3>System Load</h3>
+                <div class="stat-value">{{AVG_CPU}}% CPU</div>
+                <p>Average temperature: {{AVG_TEMP}}°C</p>
+            </div>
+        </div>
+
+        <div class="graph-container">
+            <h2>Battery Analysis Graph</h2>
+            <img src="{{REPORT_NAME}}.png" alt="Battery Analysis Graph" />
+        </div>
+
+        <h2>Data Insights</h2>
+        <div style="background: #fff8f8; border: 2px solid #cc0000; padding: 15px; border-radius: 5px;">
+            <h4 style="color: #cc0000; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;">Key Observations:</h4>
+            <ul>
+                <li><strong>Battery Efficiency:</strong> {{BATTERY_DRAIN}}% battery consumed over {{DURATION}} hours</li>
+                <li><strong>Power Profile:</strong> Average consumption of {{AVG_WATTS}}W with peaks up to {{MAX_WATTS}}W</li>
+                <li><strong>System Activity:</strong> CPU load averaged {{AVG_CPU}}% throughout the test</li>
+                <li><strong>Thermal Management:</strong> System temperature averaged {{AVG_TEMP}}°C</li>
+            </ul>
+        </div>
+
+        <div class="footer">
+            <p>Report generated on {{GENERATION_DATE}} by batlab-report</p>
+            <p>Data source: {{DATA_SOURCE}}</p>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,7 @@
+<div class="report-card">
+    <h3>{{REPORT_CONFIG}}</h3>
+    <p><strong>Host:</strong> {{REPORT_HOST}}</p>
+    <p><strong>Date:</strong> {{REPORT_DATE}}</p>
+    <p><strong>Report ID:</strong> {{REPORT_ID}}</p>
+    <a href="reports/{{REPORT_ID}}.html">View Report →</a>
+</div>

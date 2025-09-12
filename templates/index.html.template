@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>batlab - Battery Test Reports</title>
+    <style>
+        body {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background: #ffffff;
+            min-height: 100vh;
+            color: #333333;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: #ffffff;
+            padding: 40px;
+            border-radius: 15px;
+            border: 3px solid #cc0000;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        .header img {
+            max-width: 200px;
+            height: auto;
+            margin-bottom: 20px;
+        }
+        .header h1 {
+            color: #cc0000;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+        .header p {
+            color: #666666;
+            font-size: 1.2em;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+        .reports-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin: 30px 0;
+        }
+        .report-card {
+            background: #ffffff;
+            border: 2px solid #cc0000;
+            border-radius: 10px;
+            padding: 20px;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+        .report-card:hover {
+            transform: translateY(-2px);
+            border-color: #990000;
+        }
+        .report-card h3 {
+            margin-top: 0;
+            color: #cc0000;
+            border-bottom: 2px solid #cc0000;
+            padding-bottom: 10px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+        .report-card p {
+            color: #666666;
+            margin: 10px 0;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+        .report-card a {
+            display: inline-block;
+            padding: 10px 20px;
+            background: #cc0000;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            transition: background 0.3s;
+            margin-top: 10px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+        .report-card a:hover {
+            background: #990000;
+        }
+        .no-reports {
+            text-align: center;
+            background: #fff8f8;
+            border: 2px solid #cc0000;
+            padding: 30px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        .no-reports h3 {
+            color: #cc0000;
+            margin-top: 0;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+        .usage {
+            background: #f8f8f8;
+            border-left: 4px solid #cc0000;
+            padding: 20px;
+            margin: 30px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        .usage h3 {
+            margin-top: 0;
+            color: #cc0000;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+        .usage code {
+            background: #eeeeee;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+            color: #cc0000;
+        }
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            background: #f8f8f8;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border: 2px solid #cc0000;
+        }
+        .stat {
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #cc0000;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+        .stat-label {
+            color: #666666;
+            font-size: 0.9em;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+        .footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #cccccc;
+            text-align: center;
+            color: #666666;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <img src="{{LOGO_SRC}}" alt="batlab logo" />
+            <h1>batlab</h1>
+            <p>Battery Test Reports Dashboard</p>
+        </div>
+
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-value">{{TOTAL_REPORTS}}</div>
+                <div class="stat-label">Total Reports</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">{{UNIQUE_HOSTS}}</div>
+                <div class="stat-label">Devices Tested</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">{{CURRENT_YEAR}}</div>
+                <div class="stat-label">Current Year</div>
+            </div>
+        </div>
+
+        {{REPORTS_SECTION}}
+
+        <div class="usage">
+            <h3>Quick Start</h3>
+            <p style="font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;">Generate reports from your battery test data:</p>
+            <ul style="font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;">
+                <li><code>./scripts/batlab-report</code> - Generate report from latest data</li>
+                <li><code>./scripts/batlab-report --all</code> - Generate reports for all data files</li>
+                <li><code>./scripts/batlab-report my-test</code> - Generate report for specific test</li>
+            </ul>
+        </div>
+
+        <div class="footer">
+            <p>Reports generated by <strong>batlab</strong> • Last updated: {{LAST_UPDATED}}</p>
+        </div>
+    </div>
+</body>
+</html>

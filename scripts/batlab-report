@@ -53,6 +53,17 @@ base64_encode_image() {
     fi
 }
 
+# Read template file and substitute variables
+read_template() {
+    local template_file="$1"
+    if [[ -f "$template_file" ]]; then
+        cat "$template_file"
+    else
+        echo "❌ Template not found: $template_file"
+        return 1
+    fi
+}
+
 # Generate graph and return path
 generate_graph() {
     local jsonl_file="$1"
@@ -106,7 +117,7 @@ set xlabel "Time (hours)"
 set ylabel "Power (W)"
 plot '$temp_data' using 1:3 with lines linewidth 2 linecolor rgb '#990000' title "Power (W)"
 
-# CPU load
+# CPU loanded
 set title "CPU Load"
 set xlabel "Time (hours)"
 set ylabel "CPU %"
@@ -248,10 +259,7 @@ generate_html_report() {
     local avg_cpu=$(echo "$stats_output" | grep "^avg_cpu:" | cut -d: -f2)
     local avg_temp=$(echo "$stats_output" | grep "^avg_temp:" | cut -d: -f2)
 
-    # Get base64 encoded image
-    local image_base64=$(base64_encode_image "$png_file")
-
-    # Generate HTML
+    # Generate HTML using template as reference but with heredoc for now
     cat > "$html_file" << EOF
 <!DOCTYPE html>
 <html lang="en">
@@ -259,122 +267,11 @@ generate_html_report() {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Battery Report: $config_name</title>
-    <style>
-        body {
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
-            line-height: 1.6;
-            margin: 0;
-            padding: 20px;
-            background-color: #ffffff;
-            color: #333333;
-        }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            background: #ffffff;
-            padding: 30px;
-            border-radius: 10px;
-            border: 2px solid #cc0000;
-        }
-        h1 {
-            color: #cc0000;
-            border-bottom: 3px solid #cc0000;
-            padding-bottom: 10px;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
-        }
-        h2 {
-            color: #cc0000;
-            margin-top: 30px;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
-        }
-        .metadata {
-            background: #f8f8f8;
-            padding: 20px;
-            border-radius: 5px;
-            margin: 20px 0;
-            border-left: 4px solid #cc0000;
-        }
-        .metadata table {
-            width: 100%;
-            border-collapse: collapse;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
-        }
-        .metadata td {
-            padding: 8px;
-            border-bottom: 1px solid #cccccc;
-        }
-        .metadata td:first-child {
-            font-weight: bold;
-            color: #cc0000;
-            width: 150px;
-        }
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 20px;
-            margin: 20px 0;
-        }
-        .stat-card {
-            background: #ffffff;
-            border: 2px solid #cc0000;
-            border-radius: 8px;
-            padding: 20px;
-        }
-        .stat-card h3 {
-            margin-top: 0;
-            color: #cc0000;
-            border-bottom: 2px solid #cc0000;
-            padding-bottom: 5px;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
-        }
-        .stat-value {
-            font-size: 1.2em;
-            font-weight: bold;
-            color: #cc0000;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
-        }
-        .graph-container {
-            text-align: center;
-            margin: 30px 0;
-            background: #ffffff;
-            padding: 20px;
-            border-radius: 8px;
-            border: 2px solid #cc0000;
-        }
-        .graph-container img {
-            max-width: 100%;
-            height: auto;
-            border: 1px solid #cccccc;
-            border-radius: 4px;
-        }
-        .back-link {
-            display: inline-block;
-            margin: 20px 0;
-            padding: 10px 20px;
-            background: #cc0000;
-            color: white;
-            text-decoration: none;
-            border-radius: 5px;
-            transition: background 0.3s;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
-        }
-        .back-link:hover {
-            background: #990000;
-        }
-        .footer {
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 1px solid #cccccc;
-            color: #666666;
-            font-size: 0.9em;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
-        }
-    </style>
+    <link rel="stylesheet" href="../templates/report-styles.css">
 </head>
 <body>
     <div class="container">
         <a href="../index.html" class="back-link">← Back to Reports Index</a>
-
         <h1>Battery Test Report: $config_name</h1>
 
         <div class="metadata">
@@ -395,19 +292,16 @@ generate_html_report() {
                 <div class="stat-value">$(printf "%.1f" "$duration") hours</div>
                 <p>Total test runtime with $(printf "%.0f" "$samples") data samples</p>
             </div>
-
             <div class="stat-card">
                 <h3>Battery Performance</h3>
                 <div class="stat-value">$(printf "%.1f" "$start_pct")% → $(printf "%.1f" "$end_pct")%</div>
                 <p>Drained $(printf "%.1f" "$battery_drain")% at $(printf "%.1f" "$drain_rate")%/hour</p>
             </div>
-
             <div class="stat-card">
                 <h3>Power Consumption</h3>
                 <div class="stat-value">$(printf "%.1f" "$avg_watts")W average</div>
                 <p>Range: $(printf "%.1f" "$min_watts")W - $(printf "%.1f" "$max_watts")W</p>
             </div>
-
             <div class="stat-card">
                 <h3>System Load</h3>
                 <div class="stat-value">$(printf "%.1f" "$avg_cpu")% CPU</div>
@@ -417,12 +311,12 @@ generate_html_report() {
 
         <div class="graph-container">
             <h2>Battery Analysis Graph</h2>
-            <img src="data:image/png;base64,$image_base64" alt="Battery Analysis Graph" />
+            <img src="$report_name.png" alt="Battery Analysis Graph" />
         </div>
 
         <h2>Data Insights</h2>
-        <div style="background: #fff8f8; border: 2px solid #cc0000; padding: 15px; border-radius: 5px;">
-            <h4 style="color: #cc0000; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;">Key Observations:</h4>
+        <div class="insights">
+            <h4>Key Observations:</h4>
             <ul>
                 <li><strong>Battery Efficiency:</strong> $(printf "%.1f" "$battery_drain")% battery consumed over $(printf "%.1f" "$duration") hours</li>
                 <li><strong>Power Profile:</strong> Average consumption of $(printf "%.1f" "$avg_watts")W with peaks up to $(printf "%.1f" "$max_watts")W</li>
@@ -439,6 +333,7 @@ generate_html_report() {
 </body>
 </html>
 EOF
+
 
     echo "✅ HTML report generated: $html_file"
 }
@@ -466,14 +361,7 @@ generate_index() {
         unique_hosts=$(find "$DATA_DIR" -name "*.meta.json" -exec jq -r '.host // "unknown"' {} \; 2>/dev/null | sort -u | wc -l)
     fi
 
-    # Get base64 encoded logo
-    local logo_base64=""
-    if [[ -f "$DOCS_DIR/../docs/batlab.png" ]]; then
-        logo_base64=$(base64_encode_image "$DOCS_DIR/../docs/batlab.png")
-    elif [[ -f "$DOCS_DIR/batlab.png" ]]; then
-        logo_base64=$(base64_encode_image "$DOCS_DIR/batlab.png")
-    fi
-
+    # Generate index HTML
     cat > "$index_file" << EOF
 <!DOCTYPE html>
 <html lang="en">
@@ -481,156 +369,12 @@ generate_index() {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>batlab - Battery Test Reports</title>
-    <style>
-        body {
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
-            line-height: 1.6;
-            margin: 0;
-            padding: 20px;
-            background: #ffffff;
-            min-height: 100vh;
-            color: #333333;
-        }
-        .container {
-            max-width: 1000px;
-            margin: 0 auto;
-            background: #ffffff;
-            padding: 40px;
-            border-radius: 15px;
-            border: 3px solid #cc0000;
-        }
-        .header {
-            text-align: center;
-            margin-bottom: 40px;
-        }
-        .header img {
-            max-width: 200px;
-            height: auto;
-            margin-bottom: 20px;
-        }
-        .header h1 {
-            color: #cc0000;
-            font-size: 2.5em;
-            margin-bottom: 10px;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
-        }
-        .header p {
-            color: #666666;
-            font-size: 1.2em;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
-        }
-        .reports-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 20px;
-            margin: 30px 0;
-        }
-        .report-card {
-            background: #ffffff;
-            border: 2px solid #cc0000;
-            border-radius: 10px;
-            padding: 20px;
-            transition: transform 0.2s, border-color 0.2s;
-        }
-        .report-card:hover {
-            transform: translateY(-2px);
-            border-color: #990000;
-        }
-        .report-card h3 {
-            margin-top: 0;
-            color: #cc0000;
-            border-bottom: 2px solid #cc0000;
-            padding-bottom: 10px;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
-        }
-        .report-card p {
-            color: #666666;
-            margin: 10px 0;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
-        }
-        .report-card a {
-            display: inline-block;
-            padding: 10px 20px;
-            background: #cc0000;
-            color: white;
-            text-decoration: none;
-            border-radius: 5px;
-            transition: background 0.3s;
-            margin-top: 10px;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
-        }
-        .report-card a:hover {
-            background: #990000;
-        }
-        .no-reports {
-            text-align: center;
-            background: #fff8f8;
-            border: 2px solid #cc0000;
-            padding: 30px;
-            border-radius: 10px;
-            margin: 20px 0;
-        }
-        .no-reports h3 {
-            color: #cc0000;
-            margin-top: 0;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
-        }
-        .usage {
-            background: #f8f8f8;
-            border-left: 4px solid #cc0000;
-            padding: 20px;
-            margin: 30px 0;
-            border-radius: 0 8px 8px 0;
-        }
-        .usage h3 {
-            margin-top: 0;
-            color: #cc0000;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
-        }
-        .usage code {
-            background: #eeeeee;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
-            color: #cc0000;
-        }
-        .stats {
-            display: flex;
-            justify-content: space-around;
-            background: #f8f8f8;
-            padding: 20px;
-            border-radius: 10px;
-            margin: 20px 0;
-            border: 2px solid #cc0000;
-        }
-        .stat {
-            text-align: center;
-        }
-        .stat-value {
-            font-size: 2em;
-            font-weight: bold;
-            color: #cc0000;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
-        }
-        .stat-label {
-            color: #666666;
-            font-size: 0.9em;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
-        }
-        .footer {
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 1px solid #cccccc;
-            text-align: center;
-            color: #666666;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
-        }
-    </style>
+    <link rel="stylesheet" href="templates/index-styles.css">
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <img src="data:image/png;base64,$logo_base64" alt="batlab logo" />
+            <img src="batlab.png" alt="batlab logo" />
             <h1>batlab</h1>
             <p>Battery Test Reports Dashboard</p>
         </div>
@@ -649,15 +393,14 @@ generate_index() {
                 <div class="stat-label">Current Year</div>
             </div>
         </div>
-
 EOF
 
     if [[ ${#reports[@]} -eq 0 ]]; then
         cat >> "$index_file" << 'EOF'
         <div class="no-reports">
             <h3>No Reports Available</h3>
-            <p style="font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;">No battery test reports have been generated yet.</p>
-            <p style="font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;">To create your first report, run:</p>
+            <p>No battery test reports have been generated yet.</p>
+            <p>To create your first report, run:</p>
             <code>./scripts/batlab-report</code>
         </div>
 EOF
@@ -667,8 +410,7 @@ EOF
 EOF
 
         for report in "${reports[@]}"; do
-            # Try to get metadata for this report
-            local report_meta=""
+            # Get metadata for this report
             local report_config="$report"
             local report_host="Unknown"
             local report_date="Unknown"
@@ -701,8 +443,8 @@ EOF
 
         <div class="usage">
             <h3>Quick Start</h3>
-            <p style="font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;">Generate reports from your battery test data:</p>
-            <ul style="font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;">
+            <p>Generate reports from your battery test data:</p>
+            <ul>
                 <li><code>./scripts/batlab-report</code> - Generate report from latest data</li>
                 <li><code>./scripts/batlab-report --all</code> - Generate reports for all data files</li>
                 <li><code>./scripts/batlab-report my-test</code> - Generate report for specific test</li>

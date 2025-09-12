@@ -1,0 +1,6 @@
+<div class="no-reports">
+    <h3>No Reports Available</h3>
+    <p style="font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;">No battery test reports have been generated yet.</p>
+    <p style="font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;">To create your first report, run:</p>
+    <code>./scripts/batlab-report</code>
+</div>
