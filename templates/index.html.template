@@ -175,14 +175,17 @@
 
         {{REPORTS_SECTION}}
 
-        <div class="usage">
-            <h3>Quick Start</h3>
-            <p style="font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;">Generate reports from your battery test data:</p>
-            <ul style="font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;">
-                <li><code>./scripts/batlab-report</code> - Generate report from latest data</li>
-                <li><code>./scripts/batlab-report --all</code> - Generate reports for all data files</li>
-                <li><code>./scripts/batlab-report my-test</code> - Generate report for specific test</li>
+        <div class="about">
+            <h3>About batlab</h3>
+            <p>A tool for measuring and comparing battery life between FreeBSD and Linux configurations on laptops.</p>
+            <p>FreeBSD laptop users often report poor battery life compared to Linux, but lack systematic data on properly tuned configurations. This project enables researchers to:</p>
+            <ul>
+                <li><strong>Measure battery efficiency</strong> under different FreeBSD power management settings</li>
+                <li><strong>Compare against Linux baselines</strong> on the same hardware</li>
+                <li><strong>Identify optimal FreeBSD configurations</strong> that approach or exceed Linux battery life</li>
+                <li><strong>Build a dataset</strong> of real-world laptop power management performance</li>
             </ul>
+            <p><a href="{{GITHUB_URL}}" target="_blank" rel="noopener">📚 View Documentation & Source Code on GitHub</a></p>
         </div>
 
         <div class="footer">

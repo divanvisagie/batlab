@@ -1,6 +1,6 @@
 <div class="no-reports">
-    <h3>No Reports Available</h3>
-    <p style="font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;">No battery test reports have been generated yet.</p>
-    <p style="font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;">To create your first report, run:</p>
-    <code>./scripts/batlab-report</code>
+    <h3>Battery Test Reports Coming Soon</h3>
+    <p>This dashboard will showcase battery test results from various FreeBSD and Linux configurations.</p>
+    <p>Reports are currently being generated and will be published here to help the FreeBSD community optimize laptop power management.</p>
+    <p><strong>Contributing:</strong> If you'd like to contribute your own battery test results, check out the documentation on GitHub!</p>
 </div>

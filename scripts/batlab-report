@@ -53,6 +53,20 @@ base64_encode_image() {
     fi
 }
 
+# Copy CSS files to docs directory
+copy_css_files() {
+    local css_dir="$DOCS_DIR/css"
+    mkdir -p "$css_dir"
+
+    if [[ -f "$SCRIPT_DIR/../templates/index-styles.css" ]]; then
+        cp "$SCRIPT_DIR/../templates/index-styles.css" "$css_dir/"
+    fi
+
+    if [[ -f "$SCRIPT_DIR/../templates/report-styles.css" ]]; then
+        cp "$SCRIPT_DIR/../templates/report-styles.css" "$css_dir/"
+    fi
+}
+
 # Read template file and substitute variables
 read_template() {
     local template_file="$1"
@@ -267,7 +281,7 @@ generate_html_report() {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Battery Report: $config_name</title>
-    <link rel="stylesheet" href="../templates/report-styles.css">
+    <link rel="stylesheet" href="../css/report-styles.css">
 </head>
 <body>
     <div class="container">
@@ -369,7 +383,7 @@ generate_index() {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>batlab - Battery Test Reports</title>
-    <link rel="stylesheet" href="templates/index-styles.css">
+    <link rel="stylesheet" href="css/index-styles.css">
 </head>
 <body>
     <div class="container">
@@ -398,10 +412,10 @@ EOF
     if [[ ${#reports[@]} -eq 0 ]]; then
         cat >> "$index_file" << 'EOF'
         <div class="no-reports">
-            <h3>No Reports Available</h3>
-            <p>No battery test reports have been generated yet.</p>
-            <p>To create your first report, run:</p>
-            <code>./scripts/batlab-report</code>
+            <h3>Battery Test Reports Coming Soon</h3>
+            <p>This dashboard will showcase battery test results from various FreeBSD and Linux configurations.</p>
+            <p>Reports are currently being generated and will be published here to help the FreeBSD community optimize laptop power management.</p>
+            <p><strong>Contributing:</strong> If you'd like to contribute your own battery test results, check out the documentation on GitHub!</p>
         </div>
 EOF
     else
@@ -439,16 +453,33 @@ EOF
 EOF
     fi
 
+    # Get GitHub URL from git remote or use placeholder
+    local github_url="https://github.com/your-username/batlab"
+    if command -v git &> /dev/null && [[ -d "$SCRIPT_DIR/../.git" ]]; then
+        local remote_url=$(git -C "$SCRIPT_DIR/.." remote get-url origin 2>/dev/null || echo "")
+        if [[ "$remote_url" =~ ^git@github.com:(.+)\.git$ ]]; then
+            github_url="https://github.com/${BASH_REMATCH[1]}"
+        elif [[ "$remote_url" =~ ^https://github.com/(.+)\.git$ ]]; then
+            github_url="https://github.com/${BASH_REMATCH[1]}"
+        elif [[ "$remote_url" =~ ^https://github.com/(.+)$ ]]; then
+            github_url="https://github.com/${BASH_REMATCH[1]}"
+        fi
+    fi
+
     cat >> "$index_file" << EOF
 
-        <div class="usage">
-            <h3>Quick Start</h3>
-            <p>Generate reports from your battery test data:</p>
+        <div class="about">
+            <h3>About batlab</h3>
+            <p>A tool for measuring and comparing battery life between FreeBSD and Linux configurations on laptops.</p>
+            <p>FreeBSD laptop users often report poor battery life compared to Linux, but lack systematic data on properly tuned configurations. This project enables researchers to:</p>
             <ul>
-                <li><code>./scripts/batlab-report</code> - Generate report from latest data</li>
-                <li><code>./scripts/batlab-report --all</code> - Generate reports for all data files</li>
-                <li><code>./scripts/batlab-report my-test</code> - Generate report for specific test</li>
+                <li><strong>Measure battery efficiency</strong> under different FreeBSD power management settings</li>
+                <li><strong>Compare against Linux baselines</strong> on the same hardware</li>
+                <li><strong>Identify optimal FreeBSD configurations</strong> that approach or exceed Linux battery life</li>
+                <li><strong>Build a dataset</strong> of real-world laptop power management performance</li>
             </ul>
+            <p><strong>🌐 This dashboard is hosted on GitHub Pages</strong> to share battery test results from various devices and configurations with the FreeBSD community.</p>
+            <p><a href="$github_url" target="_blank" rel="noopener">📚 View Documentation & Source Code on GitHub</a></p>
         </div>
 
         <div class="footer">
@@ -499,6 +530,7 @@ main() {
 
     case "$mode" in
         "single")
+            copy_css_files
             report_name=$(basename "${target%.jsonl}" | sed 's/.*_//')
             generate_html_report "$target" "$report_name"
             generate_index
@@ -506,6 +538,7 @@ main() {
             ;;
         "all")
             echo "📊 Generating reports for all data files..."
+            copy_css_files
             local count=0
             if [[ -d "$DATA_DIR" ]]; then
                 while IFS= read -r -d '' jsonl_file; do
@@ -520,6 +553,7 @@ main() {
             echo "🌐 Open: file://$DOCS_DIR/index.html"
             ;;
         "index")
+            copy_css_files
             generate_index
             echo "🌐 Open: file://$DOCS_DIR/index.html"
             ;;
