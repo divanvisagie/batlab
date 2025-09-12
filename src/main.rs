@@ -39,9 +39,15 @@ enum OutputFormat {
 Manual configuration approach - user configures system, tool records data.\n\n\
 WORKFLOW:\n\
 1. Manually configure your system power management\n\
-2. Terminal 1: batlab log my-config-name\n\
-3. Terminal 2: batlab run workload-name\n\
-4. Stop both with Ctrl+C when done"
+2. Terminal 1: batlab log <config-name>\n\
+3. Terminal 2: batlab run <workload>\n\
+4. Stop both with Ctrl+C when done\n\n\
+EXAMPLES:\n\
+  batlab init                    # Set up directories and example workloads\n\
+  batlab log freebsd-powerd      # Start logging (1 sample per minute)\n\
+  batlab run idle                # Run idle workload in separate terminal\n\
+  batlab report                  # View results\n\
+  batlab list workloads          # Show available workloads"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -64,8 +70,14 @@ enum Commands {
         output: Option<String>,
     },
     /// Run workload (use in separate terminal while logging)
+    ///
+    /// Available workloads:
+    ///   idle   - System idle with screen on
+    ///   stress - CPU stress test workload
+    ///
+    /// Use 'batlab list workloads' for detailed descriptions
     Run {
-        /// Workload name
+        /// Workload name (idle, stress, or custom)
         workload: String,
         /// Additional workload arguments
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -499,18 +511,14 @@ fn cmd_run(
 
     println!("🏃 Running workload: {}", workload_name);
 
-    // Execute the workload script
+    // Execute the workload script directly
     let mut cmd = process::Command::new("sh");
     cmd.arg(&workload_file);
 
-    // Add the "run" function call and any arguments
-    cmd.arg("-c");
-    let script_content = format!(
-        "source '{}' && run {}",
-        workload_file.display(),
-        args.join(" ")
-    );
-    cmd.arg(&script_content);
+    // Add arguments directly to the script
+    for arg in args {
+        cmd.arg(arg);
+    }
 
     let status = cmd.status()?;
 
@@ -615,15 +623,18 @@ fn cmd_list(item: &str, workload_dir: &Path) -> Result<(), Box<dyn std::error::E
 
 fn get_workload_description(workload_path: &Path) -> Option<String> {
     if let Ok(content) = fs::read_to_string(workload_path) {
-        // Look for describe() function and extract the echo statement
-        for line in content.lines() {
-            if line.trim().starts_with("echo ") && content.contains("describe()") {
-                let desc = line
-                    .trim()
-                    .strip_prefix("echo ")?
-                    .trim_matches('"')
-                    .trim_matches('\'');
-                return Some(desc.to_string());
+        // Look for comment-based description in the first few lines
+        for line in content.lines().take(5) {
+            let line = line.trim();
+            if line.starts_with("# ") && !line.starts_with("#!/") {
+                // Extract description from comment
+                let desc = line.strip_prefix("# ")?;
+                if !desc.is_empty()
+                    && desc != "Default values"
+                    && desc != "Parse command line arguments"
+                {
+                    return Some(desc.to_string());
+                }
             }
         }
     }
