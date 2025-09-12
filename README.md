@@ -35,6 +35,10 @@ batlab run idle
 
 # 6. View results
 batlab report
+
+# 7. Generate HTML reports (optional)
+./scripts/batlab-report --all
+# Open docs/index.html in browser
 ```
 
 ## How It Works
@@ -78,7 +82,9 @@ batlab init
 batlab init                      # Set up directories
 batlab log <config-name>         # Start logging (Terminal 1)
 batlab run <workload>            # Run workload (Terminal 2)
-batlab report                    # View results
+batlab report                    # View text results
+./scripts/batlab-report          # Generate HTML report
+./scripts/batlab-report --all    # Generate all HTML reports
 batlab export --csv data.csv     # Export for analysis
 batlab list workloads            # See available workloads
 ```
@@ -106,8 +112,9 @@ batlab run idle    # Same workload, compare results
 **Analysis:**
 ```bash
 batlab report --group-by config
+./scripts/batlab-report --all    # Generate HTML reports
 batlab export --csv comparison.csv
-# How close did FreeBSD get to Linux efficiency?
+# Open docs/index.html to view detailed comparisons
 ```
 
 ### Configuration Names
@@ -134,7 +141,18 @@ Add custom workloads by creating scripts in `workload/` directory following the 
 Results stored in `data/` directory:
 - `<run-id>.jsonl` - Per-second measurements (battery %, watts, CPU, temp)
 - `<run-id>.meta.json` - System info and configuration metadata
-- Export to CSV for spreadsheet analysis
+
+### Viewing Results
+
+**Text reports:** `batlab report` - Quick command-line summary
+**HTML reports:** `./scripts/batlab-report` - Comprehensive web reports with graphs
+**CSV export:** `batlab export --csv` - For spreadsheet analysis
+
+HTML reports include:
+- Interactive battery drain graphs (4-panel analysis)
+- Detailed system metadata and test statistics
+- Professional report format suitable for research
+- Index page linking all device reports
 
 ## Research Applications
 

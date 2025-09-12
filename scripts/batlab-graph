@@ -1,0 +1,131 @@
+#!/bin/bash
+
+# batlab-graph - Simple battery data PNG generator
+# Usage: batlab-graph [output.png]
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DATA_DIR="${SCRIPT_DIR}/../data"
+
+# Show usage
+usage() {
+    echo "batlab-graph - Battery Data PNG Generator"
+    echo ""
+    echo "USAGE:"
+    echo "  batlab-graph [output.png]"
+    echo ""
+    echo "EXAMPLES:"
+    echo "  batlab-graph                    # Auto-named PNG from latest data"
+    echo "  batlab-graph my_analysis.png   # Custom filename"
+    echo ""
+    echo "REQUIREMENTS:"
+    echo "  jq, gnuplot (sudo apt install jq gnuplot)"
+}
+
+# Check arguments
+if [[ $# -ge 1 ]] && [[ "$1" == "-h" || "$1" == "--help" || "$1" == "help" ]]; then
+    usage
+    exit 0
+fi
+
+# Check dependencies
+if ! command -v jq &> /dev/null || ! command -v gnuplot &> /dev/null; then
+    echo "❌ Missing required tools: jq and/or gnuplot"
+    echo "Install with: sudo apt install jq gnuplot"
+    exit 1
+fi
+
+# Find latest JSONL file
+JSONL_FILE=$(find "$DATA_DIR" -name "*.jsonl" -type f -exec ls -t {} + 2>/dev/null | head -1)
+if [[ -z "$JSONL_FILE" ]]; then
+    echo "❌ No JSONL files found in $DATA_DIR"
+    echo "Run 'batlab log <config>' first to collect data"
+    exit 1
+fi
+
+echo "📊 Using data: $(basename "$JSONL_FILE")"
+
+# Set output filename
+if [[ $# -ge 1 ]]; then
+    OUTPUT_PNG="$1"
+else
+    config_name=$(basename "$JSONL_FILE" .jsonl | sed 's/.*_//')
+    OUTPUT_PNG="battery_${config_name}.png"
+fi
+
+echo "🔋 Creating PNG: $OUTPUT_PNG"
+
+# Create temporary data file
+temp_data=$(mktemp)
+trap "rm -f $temp_data" EXIT
+
+# Extract and convert data to hours since start
+jq -r '[.t, .pct, .watts, (.cpu_load * 100), .temp_c] | @tsv' "$JSONL_FILE" | \
+awk -F'\t' '
+BEGIN { start_time = 0 }
+{
+    cmd = "date -d \"" $1 "\" +%s 2>/dev/null"
+    cmd | getline epoch
+    close(cmd)
+
+    if (start_time == 0) start_time = epoch
+    hours = (epoch - start_time) / 3600
+
+    print hours, $2, $3, $4, $5
+}' > "$temp_data"
+
+# Get config name for title
+config_name="Battery Test"
+meta_file="${JSONL_FILE%.jsonl}.meta.json"
+if [[ -f "$meta_file" ]]; then
+    config_name=$(jq -r '.config // "Battery Test"' "$meta_file" 2>/dev/null || echo "Battery Test")
+fi
+
+# Generate PNG with gnuplot
+gnuplot << EOF
+set terminal pngcairo enhanced size 1200,800 font 'Arial,12'
+set output '$OUTPUT_PNG'
+
+set multiplot layout 2,2 title "Battery Analysis: $config_name" font 'Arial,14'
+set grid
+
+# Battery percentage
+set title "Battery Drain"
+set xlabel "Time (hours)"
+set ylabel "Battery %"
+plot '$temp_data' using 1:2 with lines linewidth 2 linecolor rgb '#cc0000' title "Battery %"
+
+# Power consumption
+set title "Power Consumption"
+set xlabel "Time (hours)"
+set ylabel "Power (W)"
+plot '$temp_data' using 1:3 with lines linewidth 2 linecolor rgb '#990000' title "Power (W)"
+
+# CPU load
+set title "CPU Load"
+set xlabel "Time (hours)"
+set ylabel "CPU %"
+set yrange [0:*]
+plot '$temp_data' using 1:4 with lines linewidth 2 linecolor rgb '#660000' title "CPU %"
+
+# Temperature
+set title "Temperature"
+set xlabel "Time (hours)"
+set ylabel "Temperature (°C)"
+plot '$temp_data' using 1:5 with lines linewidth 2 linecolor rgb '#aa3333' title "Temp °C"
+
+unset multiplot
+EOF
+
+echo "✅ Graph saved: $OUTPUT_PNG"
+
+# Show summary stats
+sample_count=$(wc -l < "$temp_data")
+duration=$(tail -1 "$temp_data" | awk '{print $1}')
+start_pct=$(head -1 "$temp_data" | awk '{print $2}')
+end_pct=$(tail -1 "$temp_data" | awk '{print $2}')
+avg_watts=$(awk '{sum+=$3; count++} END {print sum/count}' "$temp_data")
+
+printf "📊 Summary: %d samples, %.1f hours\n" "$sample_count" "$duration"
+printf "   Battery: %.1f%% → %.1f%%, avg %.1fW\n" "$start_pct" "$end_pct" "$avg_watts"

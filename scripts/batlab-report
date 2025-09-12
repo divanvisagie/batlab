@@ -1,0 +1,788 @@
+#!/bin/bash
+
+# batlab-report - Comprehensive HTML report generator for battery data
+# Usage: batlab-report [report_name]
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DATA_DIR="${SCRIPT_DIR}/../data"
+DOCS_DIR="${SCRIPT_DIR}/../docs"
+
+# Show usage
+usage() {
+    echo "batlab-report - Battery Data HTML Report Generator"
+    echo ""
+    echo "USAGE:"
+    echo "  batlab-report [report_name]     # Generate report for specific data file"
+    echo "  batlab-report --all             # Generate reports for all data files"
+    echo "  batlab-report --index           # Generate/update index.html only"
+    echo ""
+    echo "EXAMPLES:"
+    echo "  batlab-report                   # Report from latest data"
+    echo "  batlab-report my-test           # Report from specific test"
+    echo "  batlab-report --all             # All reports + index"
+    echo ""
+    echo "REQUIREMENTS:"
+    echo "  jq, gnuplot (sudo apt install jq gnuplot)"
+}
+
+# Check arguments
+if [[ $# -ge 1 ]] && [[ "$1" == "-h" || "$1" == "--help" || "$1" == "help" ]]; then
+    usage
+    exit 0
+fi
+
+# Check dependencies
+if ! command -v jq &> /dev/null || ! command -v gnuplot &> /dev/null; then
+    echo "❌ Missing required tools: jq and/or gnuplot"
+    echo "Install with: sudo apt install jq gnuplot"
+    exit 1
+fi
+
+# Create docs directory if it doesn't exist
+mkdir -p "$DOCS_DIR/reports"
+
+# Base64 encode image for embedding
+base64_encode_image() {
+    local image_path="$1"
+    if [[ -f "$image_path" ]]; then
+        base64 "$image_path" | tr -d '\n'
+    else
+        echo ""
+    fi
+}
+
+# Generate graph and return path
+generate_graph() {
+    local jsonl_file="$1"
+    local output_png="$2"
+
+    echo "📊 Generating graph: $output_png"
+
+    # Create temporary data file
+    local temp_data=$(mktemp)
+    trap "rm -f $temp_data" EXIT
+
+    # Extract and convert data to hours since start
+    jq -r '[.t, .pct, .watts, (.cpu_load * 100), .temp_c] | @tsv' "$jsonl_file" | \
+    awk -F'\t' '
+    BEGIN { start_time = 0 }
+    {
+        cmd = "date -d \"" $1 "\" +%s 2>/dev/null"
+        cmd | getline epoch
+        close(cmd)
+
+        if (start_time == 0) start_time = epoch
+        hours = (epoch - start_time) / 3600
+
+        print hours, $2, $3, $4, $5
+    }' > "$temp_data"
+
+    # Get config name for title
+    local config_name="Battery Test"
+    local meta_file="${jsonl_file%.jsonl}.meta.json"
+    if [[ -f "$meta_file" ]]; then
+        config_name=$(jq -r '.config // "Battery Test"' "$meta_file" 2>/dev/null || echo "Battery Test")
+    fi
+
+    # Generate PNG with gnuplot
+    gnuplot << EOF
+set terminal pngcairo enhanced size 1200,800 font 'Arial,12'
+set output '$output_png'
+
+set multiplot layout 2,2 title "Battery Analysis: $config_name" font 'Arial,14'
+set grid
+
+# Battery percentage
+set title "Battery Drain"
+set xlabel "Time (hours)"
+set ylabel "Battery %"
+plot '$temp_data' using 1:2 with lines linewidth 2 linecolor rgb '#cc0000' title "Battery %"
+
+# Power consumption
+set title "Power Consumption"
+set xlabel "Time (hours)"
+set ylabel "Power (W)"
+plot '$temp_data' using 1:3 with lines linewidth 2 linecolor rgb '#990000' title "Power (W)"
+
+# CPU load
+set title "CPU Load"
+set xlabel "Time (hours)"
+set ylabel "CPU %"
+set yrange [0:*]
+plot '$temp_data' using 1:4 with lines linewidth 2 linecolor rgb '#660000' title "CPU %"
+
+# Temperature
+set title "Temperature"
+set xlabel "Time (hours)"
+set ylabel "Temperature (°C)"
+plot '$temp_data' using 1:5 with lines linewidth 2 linecolor rgb '#aa3333' title "Temp °C"
+
+unset multiplot
+EOF
+
+    echo "✅ Graph generated: $output_png"
+}
+
+# Calculate statistics from data
+calculate_stats() {
+    local jsonl_file="$1"
+    local temp_data=$(mktemp)
+    trap "rm -f $temp_data" EXIT
+
+    # Extract numeric data
+    jq -r '[.t, .pct, .watts, (.cpu_load * 100), .temp_c] | @tsv' "$jsonl_file" | \
+    awk -F'\t' '
+    BEGIN { start_time = 0 }
+    {
+        cmd = "date -d \"" $1 "\" +%s 2>/dev/null"
+        cmd | getline epoch
+        close(cmd)
+
+        if (start_time == 0) start_time = epoch
+        hours = (epoch - start_time) / 3600
+
+        print hours, $2, $3, $4, $5
+    }' > "$temp_data"
+
+    # Calculate statistics
+    awk '{
+        if (NR == 1) {
+            start_pct = $2
+            min_pct = max_pct = $2
+            min_watts = max_watts = $3
+            min_cpu = max_cpu = $4
+            min_temp = max_temp = $5
+        }
+
+        duration = $1
+        end_pct = $2
+
+        if ($2 < min_pct) min_pct = $2
+        if ($2 > max_pct) max_pct = $2
+        if ($3 < min_watts) min_watts = $3
+        if ($3 > max_watts) max_watts = $3
+        if ($4 < min_cpu) min_cpu = $4
+        if ($4 > max_cpu) max_cpu = $4
+        if ($5 < min_temp) min_temp = $5
+        if ($5 > max_temp) max_temp = $5
+
+        sum_watts += $3
+        sum_cpu += $4
+        sum_temp += $5
+        count++
+    }
+    END {
+        avg_watts = sum_watts / count
+        avg_cpu = sum_cpu / count
+        avg_temp = sum_temp / count
+        battery_drain = start_pct - end_pct
+        drain_rate = (count > 1) ? battery_drain / duration : 0
+
+        print "duration:" duration
+        print "samples:" count
+        print "start_pct:" start_pct
+        print "end_pct:" end_pct
+        print "battery_drain:" battery_drain
+        print "drain_rate:" drain_rate
+        print "avg_watts:" avg_watts
+        print "min_watts:" min_watts
+        print "max_watts:" max_watts
+        print "avg_cpu:" avg_cpu
+        print "min_cpu:" min_cpu
+        print "max_cpu:" max_cpu
+        print "avg_temp:" avg_temp
+        print "min_temp:" min_temp
+        print "max_temp:" max_temp
+    }' "$temp_data"
+}
+
+# Generate HTML report for a single data file
+generate_html_report() {
+    local jsonl_file="$1"
+    local report_name="$2"
+
+    if [[ ! -f "$jsonl_file" ]]; then
+        echo "❌ Data file not found: $jsonl_file"
+        return 1
+    fi
+
+    local meta_file="${jsonl_file%.jsonl}.meta.json"
+    local png_file="$DOCS_DIR/reports/${report_name}.png"
+    local html_file="$DOCS_DIR/reports/${report_name}.html"
+
+    echo "📄 Generating HTML report: $html_file"
+
+    # Generate the graph
+    generate_graph "$jsonl_file" "$png_file"
+
+    # Get metadata
+    local config_name="Unknown"
+    local host="Unknown"
+    local os="Unknown"
+    local start_time="Unknown"
+    local run_id="Unknown"
+    local sampling_hz="Unknown"
+
+    if [[ -f "$meta_file" ]]; then
+        config_name=$(jq -r '.config // "Unknown"' "$meta_file" 2>/dev/null || echo "Unknown")
+        host=$(jq -r '.host // "Unknown"' "$meta_file" 2>/dev/null || echo "Unknown")
+        os=$(jq -r '.os // "Unknown"' "$meta_file" 2>/dev/null || echo "Unknown")
+        start_time=$(jq -r '.start_time // "Unknown"' "$meta_file" 2>/dev/null || echo "Unknown")
+        run_id=$(jq -r '.run_id // "Unknown"' "$meta_file" 2>/dev/null || echo "Unknown")
+        sampling_hz=$(jq -r '.sampling_hz // "Unknown"' "$meta_file" 2>/dev/null || echo "Unknown")
+    fi
+
+    # Calculate statistics
+    local stats_output=$(calculate_stats "$jsonl_file")
+    local duration=$(echo "$stats_output" | grep "^duration:" | cut -d: -f2)
+    local samples=$(echo "$stats_output" | grep "^samples:" | cut -d: -f2)
+    local start_pct=$(echo "$stats_output" | grep "^start_pct:" | cut -d: -f2)
+    local end_pct=$(echo "$stats_output" | grep "^end_pct:" | cut -d: -f2)
+    local battery_drain=$(echo "$stats_output" | grep "^battery_drain:" | cut -d: -f2)
+    local drain_rate=$(echo "$stats_output" | grep "^drain_rate:" | cut -d: -f2)
+    local avg_watts=$(echo "$stats_output" | grep "^avg_watts:" | cut -d: -f2)
+    local min_watts=$(echo "$stats_output" | grep "^min_watts:" | cut -d: -f2)
+    local max_watts=$(echo "$stats_output" | grep "^max_watts:" | cut -d: -f2)
+    local avg_cpu=$(echo "$stats_output" | grep "^avg_cpu:" | cut -d: -f2)
+    local avg_temp=$(echo "$stats_output" | grep "^avg_temp:" | cut -d: -f2)
+
+    # Get base64 encoded image
+    local image_base64=$(base64_encode_image "$png_file")
+
+    # Generate HTML
+    cat > "$html_file" << EOF
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Battery Report: $config_name</title>
+    <style>
+        body {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #ffffff;
+            color: #333333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #ffffff;
+            padding: 30px;
+            border-radius: 10px;
+            border: 2px solid #cc0000;
+        }
+        h1 {
+            color: #cc0000;
+            border-bottom: 3px solid #cc0000;
+            padding-bottom: 10px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+        h2 {
+            color: #cc0000;
+            margin-top: 30px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+        .metadata {
+            background: #f8f8f8;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 20px 0;
+            border-left: 4px solid #cc0000;
+        }
+        .metadata table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+        .metadata td {
+            padding: 8px;
+            border-bottom: 1px solid #cccccc;
+        }
+        .metadata td:first-child {
+            font-weight: bold;
+            color: #cc0000;
+            width: 150px;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: #ffffff;
+            border: 2px solid #cc0000;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        .stat-card h3 {
+            margin-top: 0;
+            color: #cc0000;
+            border-bottom: 2px solid #cc0000;
+            padding-bottom: 5px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+        .stat-value {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #cc0000;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+        .graph-container {
+            text-align: center;
+            margin: 30px 0;
+            background: #ffffff;
+            padding: 20px;
+            border-radius: 8px;
+            border: 2px solid #cc0000;
+        }
+        .graph-container img {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #cccccc;
+            border-radius: 4px;
+        }
+        .back-link {
+            display: inline-block;
+            margin: 20px 0;
+            padding: 10px 20px;
+            background: #cc0000;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            transition: background 0.3s;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+        .back-link:hover {
+            background: #990000;
+        }
+        .footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #cccccc;
+            color: #666666;
+            font-size: 0.9em;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="../index.html" class="back-link">← Back to Reports Index</a>
+
+        <h1>Battery Test Report: $config_name</h1>
+
+        <div class="metadata">
+            <h2>Test Information</h2>
+            <table>
+                <tr><td>Configuration</td><td>$config_name</td></tr>
+                <tr><td>Host</td><td>$host</td></tr>
+                <tr><td>Operating System</td><td>$os</td></tr>
+                <tr><td>Start Time</td><td>$start_time</td></tr>
+                <tr><td>Run ID</td><td>$run_id</td></tr>
+                <tr><td>Sampling Rate</td><td>$(printf "%.3f" "$sampling_hz") Hz</td></tr>
+            </table>
+        </div>
+
+        <div class="stats">
+            <div class="stat-card">
+                <h3>Test Duration</h3>
+                <div class="stat-value">$(printf "%.1f" "$duration") hours</div>
+                <p>Total test runtime with $(printf "%.0f" "$samples") data samples</p>
+            </div>
+
+            <div class="stat-card">
+                <h3>Battery Performance</h3>
+                <div class="stat-value">$(printf "%.1f" "$start_pct")% → $(printf "%.1f" "$end_pct")%</div>
+                <p>Drained $(printf "%.1f" "$battery_drain")% at $(printf "%.1f" "$drain_rate")%/hour</p>
+            </div>
+
+            <div class="stat-card">
+                <h3>Power Consumption</h3>
+                <div class="stat-value">$(printf "%.1f" "$avg_watts")W average</div>
+                <p>Range: $(printf "%.1f" "$min_watts")W - $(printf "%.1f" "$max_watts")W</p>
+            </div>
+
+            <div class="stat-card">
+                <h3>System Load</h3>
+                <div class="stat-value">$(printf "%.1f" "$avg_cpu")% CPU</div>
+                <p>Average temperature: $(printf "%.1f" "$avg_temp")°C</p>
+            </div>
+        </div>
+
+        <div class="graph-container">
+            <h2>Battery Analysis Graph</h2>
+            <img src="data:image/png;base64,$image_base64" alt="Battery Analysis Graph" />
+        </div>
+
+        <h2>Data Insights</h2>
+        <div style="background: #fff8f8; border: 2px solid #cc0000; padding: 15px; border-radius: 5px;">
+            <h4 style="color: #cc0000; font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;">Key Observations:</h4>
+            <ul>
+                <li><strong>Battery Efficiency:</strong> $(printf "%.1f" "$battery_drain")% battery consumed over $(printf "%.1f" "$duration") hours</li>
+                <li><strong>Power Profile:</strong> Average consumption of $(printf "%.1f" "$avg_watts")W with peaks up to $(printf "%.1f" "$max_watts")W</li>
+                <li><strong>System Activity:</strong> CPU load averaged $(printf "%.1f" "$avg_cpu")% throughout the test</li>
+                <li><strong>Thermal Management:</strong> System temperature averaged $(printf "%.1f" "$avg_temp")°C</li>
+            </ul>
+        </div>
+
+        <div class="footer">
+            <p>Report generated on $(date) by batlab-report</p>
+            <p>Data source: $(basename "$jsonl_file")</p>
+        </div>
+    </div>
+</body>
+</html>
+EOF
+
+    echo "✅ HTML report generated: $html_file"
+}
+
+# Generate index.html
+generate_index() {
+    local index_file="$DOCS_DIR/index.html"
+
+    echo "📄 Generating index: $index_file"
+
+    # Find all report HTML files
+    local reports=()
+    if [[ -d "$DOCS_DIR/reports" ]]; then
+        while IFS= read -r -d '' file; do
+            reports+=("$(basename "${file%.html}")")
+        done < <(find "$DOCS_DIR/reports" -name "*.html" -print0 2>/dev/null)
+    fi
+
+    # Sort reports by name
+    IFS=$'\n' reports=($(sort <<<"${reports[*]}"))
+
+    # Count unique hosts from available data files
+    local unique_hosts=0
+    if [[ -d "$DATA_DIR" ]]; then
+        unique_hosts=$(find "$DATA_DIR" -name "*.meta.json" -exec jq -r '.host // "unknown"' {} \; 2>/dev/null | sort -u | wc -l)
+    fi
+
+    # Get base64 encoded logo
+    local logo_base64=""
+    if [[ -f "$DOCS_DIR/../docs/batlab.png" ]]; then
+        logo_base64=$(base64_encode_image "$DOCS_DIR/../docs/batlab.png")
+    elif [[ -f "$DOCS_DIR/batlab.png" ]]; then
+        logo_base64=$(base64_encode_image "$DOCS_DIR/batlab.png")
+    fi
+
+    cat > "$index_file" << EOF
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>batlab - Battery Test Reports</title>
+    <style>
+        body {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background: #ffffff;
+            min-height: 100vh;
+            color: #333333;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: #ffffff;
+            padding: 40px;
+            border-radius: 15px;
+            border: 3px solid #cc0000;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        .header img {
+            max-width: 200px;
+            height: auto;
+            margin-bottom: 20px;
+        }
+        .header h1 {
+            color: #cc0000;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+        .header p {
+            color: #666666;
+            font-size: 1.2em;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+        .reports-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin: 30px 0;
+        }
+        .report-card {
+            background: #ffffff;
+            border: 2px solid #cc0000;
+            border-radius: 10px;
+            padding: 20px;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+        .report-card:hover {
+            transform: translateY(-2px);
+            border-color: #990000;
+        }
+        .report-card h3 {
+            margin-top: 0;
+            color: #cc0000;
+            border-bottom: 2px solid #cc0000;
+            padding-bottom: 10px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+        .report-card p {
+            color: #666666;
+            margin: 10px 0;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+        .report-card a {
+            display: inline-block;
+            padding: 10px 20px;
+            background: #cc0000;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            transition: background 0.3s;
+            margin-top: 10px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+        .report-card a:hover {
+            background: #990000;
+        }
+        .no-reports {
+            text-align: center;
+            background: #fff8f8;
+            border: 2px solid #cc0000;
+            padding: 30px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        .no-reports h3 {
+            color: #cc0000;
+            margin-top: 0;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+        .usage {
+            background: #f8f8f8;
+            border-left: 4px solid #cc0000;
+            padding: 20px;
+            margin: 30px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        .usage h3 {
+            margin-top: 0;
+            color: #cc0000;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+        .usage code {
+            background: #eeeeee;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+            color: #cc0000;
+        }
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            background: #f8f8f8;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border: 2px solid #cc0000;
+        }
+        .stat {
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #cc0000;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+        .stat-label {
+            color: #666666;
+            font-size: 0.9em;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+        .footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #cccccc;
+            text-align: center;
+            color: #666666;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <img src="data:image/png;base64,$logo_base64" alt="batlab logo" />
+            <h1>batlab</h1>
+            <p>Battery Test Reports Dashboard</p>
+        </div>
+
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-value">${#reports[@]}</div>
+                <div class="stat-label">Total Reports</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">$unique_hosts</div>
+                <div class="stat-label">Devices Tested</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">$(date +%Y)</div>
+                <div class="stat-label">Current Year</div>
+            </div>
+        </div>
+
+EOF
+
+    if [[ ${#reports[@]} -eq 0 ]]; then
+        cat >> "$index_file" << 'EOF'
+        <div class="no-reports">
+            <h3>No Reports Available</h3>
+            <p style="font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;">No battery test reports have been generated yet.</p>
+            <p style="font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;">To create your first report, run:</p>
+            <code>./scripts/batlab-report</code>
+        </div>
+EOF
+    else
+        cat >> "$index_file" << 'EOF'
+        <div class="reports-grid">
+EOF
+
+        for report in "${reports[@]}"; do
+            # Try to get metadata for this report
+            local report_meta=""
+            local report_config="$report"
+            local report_host="Unknown"
+            local report_date="Unknown"
+
+            # Look for corresponding data file
+            local data_file=$(find "$DATA_DIR" -name "*${report}*.meta.json" | head -1)
+            if [[ -f "$data_file" ]]; then
+                report_config=$(jq -r '.config // "Unknown"' "$data_file" 2>/dev/null || echo "$report")
+                report_host=$(jq -r '.host // "Unknown"' "$data_file" 2>/dev/null || echo "Unknown")
+                report_date=$(jq -r '.start_time // "Unknown"' "$data_file" 2>/dev/null | cut -d'T' -f1 || echo "Unknown")
+            fi
+
+            cat >> "$index_file" << EOF
+            <div class="report-card">
+                <h3>$report_config</h3>
+                <p><strong>Host:</strong> $report_host</p>
+                <p><strong>Date:</strong> $report_date</p>
+                <p><strong>Report ID:</strong> $report</p>
+                <a href="reports/${report}.html">View Report →</a>
+            </div>
+EOF
+        done
+
+        cat >> "$index_file" << 'EOF'
+        </div>
+EOF
+    fi
+
+    cat >> "$index_file" << EOF
+
+        <div class="usage">
+            <h3>Quick Start</h3>
+            <p style="font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;">Generate reports from your battery test data:</p>
+            <ul style="font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;">
+                <li><code>./scripts/batlab-report</code> - Generate report from latest data</li>
+                <li><code>./scripts/batlab-report --all</code> - Generate reports for all data files</li>
+                <li><code>./scripts/batlab-report my-test</code> - Generate report for specific test</li>
+            </ul>
+        </div>
+
+        <div class="footer">
+            <p>Reports generated by <strong>batlab</strong> • Last updated: $(date)</p>
+        </div>
+    </div>
+</body>
+</html>
+EOF
+
+    echo "✅ Index generated: $index_file"
+}
+
+# Main execution logic
+main() {
+    local mode="single"
+    local target=""
+
+    # Parse arguments
+    if [[ $# -eq 0 ]]; then
+        # Use latest data file
+        target=$(find "$DATA_DIR" -name "*.jsonl" -type f -exec ls -t {} + 2>/dev/null | head -1)
+        if [[ -z "$target" ]]; then
+            echo "❌ No JSONL files found in $DATA_DIR"
+            echo "Run 'batlab log <config>' first to collect data"
+            exit 1
+        fi
+    elif [[ "$1" == "--all" ]]; then
+        mode="all"
+    elif [[ "$1" == "--index" ]]; then
+        mode="index"
+    else
+        # Look for specific data file
+        target="$1"
+        # If not a full path, search for it
+        if [[ ! -f "$target" ]]; then
+            found_file=$(find "$DATA_DIR" -name "*${target}*.jsonl" -type f | head -1)
+            if [[ -n "$found_file" ]]; then
+                target="$found_file"
+            else
+                echo "❌ Data file not found: $target"
+                echo "Available files:"
+                find "$DATA_DIR" -name "*.jsonl" -type f -exec basename {} \; | head -5
+                exit 1
+            fi
+        fi
+    fi
+
+    case "$mode" in
+        "single")
+            report_name=$(basename "${target%.jsonl}" | sed 's/.*_//')
+            generate_html_report "$target" "$report_name"
+            generate_index
+            echo "🌐 Open: file://$DOCS_DIR/index.html"
+            ;;
+        "all")
+            echo "📊 Generating reports for all data files..."
+            local count=0
+            if [[ -d "$DATA_DIR" ]]; then
+                while IFS= read -r -d '' jsonl_file; do
+                    report_name=$(basename "${jsonl_file%.jsonl}" | sed 's/.*_//')
+                    generate_html_report "$jsonl_file" "$report_name"
+                    count=$((count + 1))
+                done < <(find "$DATA_DIR" -name "*.jsonl" -type f -print0 2>/dev/null)
+            fi
+
+            generate_index
+            echo "✅ Generated $count reports"
+            echo "🌐 Open: file://$DOCS_DIR/index.html"
+            ;;
+        "index")
+            generate_index
+            echo "🌐 Open: file://$DOCS_DIR/index.html"
+            ;;
+    esac
+}
+
+# Run main function
+main "$@"
