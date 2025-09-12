@@ -42,6 +42,9 @@ WORKFLOW:\n\
 2. Terminal 1: batlab log <config-name>\n\
 3. Terminal 2: batlab run <workload>\n\
 4. Stop both with Ctrl+C when done\n\n\
+SUSPENSION PREVENTION:\n\
+batlab automatically prevents system suspension during logging and workloads.\n\
+Requires: systemd-inhibit (Linux), caffeinate (macOS), or caffeine package.\n\n\
 EXAMPLES:\n\
   batlab init                    # Set up directories and example workloads\n\
   batlab log freebsd-powerd      # Start logging (1 sample per minute)\n\
@@ -443,6 +446,9 @@ fn cmd_log(
     let mut error_count = 0u64;
 
     println!("🚀 Logging started - run workload in another terminal");
+
+    // Prevent system suspension during logging
+    let _suspend_preventer = prevent_system_suspension();
 
     // Main sampling loop
     while running.load(Ordering::SeqCst) {
@@ -1061,4 +1067,88 @@ fn generate_csv_report(report: &ComparisonReport) -> String {
     }
 
     output
+}
+
+/// Prevent system suspension during battery testing
+/// Returns a handle that keeps suspension disabled while held
+fn prevent_system_suspension() -> SuspensionPreventer {
+    SuspensionPreventer::new()
+}
+
+/// Handle to prevent system suspension
+struct SuspensionPreventer {
+    #[cfg(target_os = "linux")]
+    _inhibitor: Option<std::process::Child>,
+}
+
+impl SuspensionPreventer {
+    fn new() -> Self {
+        #[cfg(target_os = "linux")]
+        {
+            // Try systemd-inhibit first (most reliable)
+            if let Ok(child) = std::process::Command::new("systemd-inhibit")
+                .args([
+                    "--what=sleep:idle",
+                    "--who=batlab",
+                    "--why=Battery testing in progress",
+                    "--mode=block",
+                    "sleep",
+                    "999999",
+                ])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+            {
+                println!("🔒 System suspension prevented (systemd-inhibit)");
+                return SuspensionPreventer {
+                    _inhibitor: Some(child),
+                };
+            }
+
+            // Fallback: try caffeine
+            if which::which("caffeine").is_ok() {
+                if let Ok(child) = std::process::Command::new("caffeine")
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .spawn()
+                {
+                    println!("🔒 System suspension prevented (caffeine)");
+                    return SuspensionPreventer {
+                        _inhibitor: Some(child),
+                    };
+                }
+            }
+
+            println!("⚠️  Could not prevent system suspension - install systemd or caffeine");
+            SuspensionPreventer { _inhibitor: None }
+        }
+
+        #[cfg(target_os = "freebsd")]
+        {
+            // FreeBSD doesn't have built-in suspension prevention, but we can try some approaches
+            println!("⚠️  Suspension prevention not implemented for FreeBSD");
+            SuspensionPreventer {}
+        }
+
+        #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+        {
+            println!("⚠️  Suspension prevention not available on this platform");
+            SuspensionPreventer {}
+        }
+    }
+}
+
+impl Drop for SuspensionPreventer {
+    fn drop(&mut self) {
+        #[cfg(target_os = "linux")]
+        {
+            if let Some(mut child) = self._inhibitor.take() {
+                let _ = child.kill();
+                let _ = child.wait();
+                println!("🔓 System suspension re-enabled");
+            }
+        }
+    }
 }

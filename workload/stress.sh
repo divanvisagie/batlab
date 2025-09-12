@@ -5,7 +5,7 @@
 
 # Default values
 intensity=25    # CPU load percentage (1-100)
-duration=3600   # Default 1 hour
+duration=36000   # Default 10 hours
 
 # Parse command line arguments
 while [ $# -gt 0 ]; do
@@ -45,6 +45,54 @@ fi
 echo "🔥 Running CPU stress at ${intensity}% intensity for $duration seconds ($(($duration / 60)) minutes)..."
 echo "⏹️  Press Ctrl+C to stop"
 
+# Prevent system suspension during stress test
+prevent_suspension() {
+    # Try systemd-inhibit first (most common on Linux)
+    if command -v systemd-inhibit >/dev/null 2>&1; then
+        echo "🔒 Preventing suspension with systemd-inhibit"
+        systemd-inhibit --what=sleep:idle --who=batlab-stress --why="Battery stress test in progress" sleep "$duration" &
+        inhibit_pid=$!
+        return 0
+    fi
+
+    # Try caffeine as fallback
+    if command -v caffeine >/dev/null 2>&1; then
+        echo "🔒 Preventing suspension with caffeine"
+        caffeine &
+        caffeine_pid=$!
+        return 0
+    fi
+
+    # Try pmset on macOS
+    if command -v pmset >/dev/null 2>&1; then
+        echo "🔒 Preventing suspension with pmset"
+        caffeinate -i &
+        caffeinate_pid=$!
+        return 0
+    fi
+
+    echo "⚠️  No suspension prevention tool found - system may suspend during test"
+    return 1
+}
+
+# Cleanup function
+cleanup() {
+    echo "🔓 Re-enabling system suspension"
+    [ -n "$inhibit_pid" ] && kill "$inhibit_pid" 2>/dev/null
+    [ -n "$caffeine_pid" ] && kill "$caffeine_pid" 2>/dev/null
+    [ -n "$caffeinate_pid" ] && kill "$caffeinate_pid" 2>/dev/null
+
+    # Kill all stress worker processes
+    jobs -p | xargs -r kill 2>/dev/null
+    exit 0
+}
+
+# Set up signal handlers
+trap cleanup INT TERM
+
+# Start suspension prevention
+prevent_suspension
+
 # Get number of CPU cores
 ncpu=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo "1")
 echo "📊 Using $ncpu CPU cores"
@@ -76,5 +124,8 @@ done
 
 # Wait for all background jobs to complete
 wait
+
+# Clean up
+cleanup
 
 echo "✅ CPU stress workload completed"

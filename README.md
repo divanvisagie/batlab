@@ -62,6 +62,11 @@ batlab init
 - Rust toolchain (for building from source)
 - Shell access for workload scripts
 
+**Recommended for suspension prevention:**
+- Linux: `systemd` (systemd-inhibit) or `caffeine` package
+- macOS: Built-in `caffeinate` (automatic)
+- FreeBSD: Manual power management configuration
+
 **FreeBSD users:** Install Rust via `pkg install rust` or ports
 **Linux users:** Install Rust via package manager or [rustup.rs](https://rustup.rs/)
 
