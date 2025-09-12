@@ -4,8 +4,8 @@
 //! Manual configuration approach - user configures system, tool records data.
 
 use batlab::{
-    collect_telemetry, generate_run_id, get_battery_info, get_system_info, BatteryError,
-    RunMetadata, TelemetryError, TelemetrySample,
+    collect_telemetry, generate_auto_config_name, generate_run_id, get_battery_info,
+    get_system_info, BatteryError, RunMetadata, TelemetryError, TelemetrySample,
 };
 use chrono::Utc;
 use clap::{Parser, Subcommand, ValueEnum};
@@ -39,15 +39,20 @@ enum OutputFormat {
 Manual configuration approach - user configures system, tool records data.\n\n\
 WORKFLOW:\n\
 1. Manually configure your system power management\n\
-2. Terminal 1: batlab log <config-name>\n\
+2. Terminal 1: batlab log [config-name] (auto-generates if not provided)\n\
 3. Terminal 2: batlab run <workload>\n\
 4. Stop both with Ctrl+C when done\n\n\
 SUSPENSION PREVENTION:\n\
 batlab automatically prevents system suspension during logging and workloads.\n\
 Requires: systemd-inhibit (Linux), caffeinate (macOS), or caffeine package.\n\n\
+AUTOMATIC CONFIG NAMING:\n\
+If no config name is provided, batlab will auto-generate one based on your\n\
+operating system and hardware (e.g., 'linux-lenovo-thinkpad-x1-carbon-gen-9').\n\n\
 EXAMPLES:\n\
   batlab init                    # Set up directories and example workloads\n\
-  batlab log freebsd-powerd      # Start logging (1 sample per minute)\n\
+  batlab show-config             # Preview auto-generated config name\n\
+  batlab log                     # Start logging with auto-generated config name\n\
+  batlab log freebsd-powerd      # Start logging with custom config name\n\
   batlab run idle                # Run idle workload in separate terminal\n\
   batlab report                  # View results\n\
   batlab list workloads          # Show available workloads"
@@ -61,10 +66,11 @@ struct Cli {
 enum Commands {
     /// Initialize directories and check system capabilities
     Init,
-    /// Start telemetry logging with user-defined configuration name
+    /// Start telemetry logging with optional configuration name
     Log {
         /// Configuration name (letters, numbers, hyphens, underscores only)
-        config_name: String,
+        /// If not provided, will auto-generate based on OS and hardware
+        config_name: Option<String>,
         /// Sampling frequency in Hz (0.01-10.0)
         #[arg(long, default_value = "0.0167")]
         hz: f32,
@@ -123,6 +129,8 @@ enum Commands {
     Sample,
     /// Show system metadata
     Metadata,
+    /// Show what auto-generated config name would be used
+    ShowConfig,
 }
 
 #[derive(Debug, Serialize)]
@@ -174,7 +182,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             config_name,
             hz,
             output,
-        } => cmd_log(&config_name, hz, output.as_deref(), &data_dir),
+        } => cmd_log(config_name.as_deref(), hz, output.as_deref(), &data_dir),
         Commands::Run { workload, args } => cmd_run(&workload, &args, &workload_dir),
         Commands::Report {
             group_by,
@@ -194,6 +202,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::List { item } => cmd_list(&item, &workload_dir),
         Commands::Sample => cmd_sample(),
         Commands::Metadata => cmd_metadata(),
+        Commands::ShowConfig => cmd_show_config(),
     }
 }
 
@@ -228,7 +237,9 @@ fn cmd_init(
     println!("✅ Initialization complete!");
     println!("📋 Next steps:");
     println!("   1. Manually configure your system power management");
-    println!("   2. Run: batlab log <config-name> (in terminal 1)");
+    println!(
+        "   2. Run: batlab log (auto-detects config) or batlab log <config-name> (in terminal 1)"
+    );
     println!("   3. Run: batlab run <workload> (in terminal 2)");
 
     Ok(())
@@ -370,16 +381,36 @@ run() {
 
 /// Start telemetry logging
 fn cmd_log(
-    config_name: &str,
+    config_name: Option<&str>,
     hz: f32,
     output_file: Option<&str>,
     data_dir: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Validate config name
-    if config_name.is_empty() || config_name.chars().any(|c| c.is_whitespace()) {
-        eprintln!("❌ Configuration name cannot be empty or contain whitespace");
-        process::exit(1);
-    }
+    // Generate or validate config name
+    let config_name = match config_name {
+        Some(name) => {
+            // Validate provided config name
+            if name.is_empty() || name.chars().any(|c| c.is_whitespace()) {
+                eprintln!("❌ Configuration name cannot be empty or contain whitespace");
+                process::exit(1);
+            }
+            name.to_string()
+        }
+        None => {
+            // Auto-generate config name
+            match generate_auto_config_name() {
+                Ok(name) => {
+                    println!("🤖 Auto-generated config name: {}", name);
+                    name
+                }
+                Err(e) => {
+                    eprintln!("❌ Failed to auto-generate config name: {}", e);
+                    eprintln!("💡 Please provide a config name manually: batlab log <config-name>");
+                    process::exit(1);
+                }
+            }
+        }
+    };
 
     // Validate frequency
     if !(0.01..=10.0).contains(&hz) {
@@ -396,7 +427,7 @@ fn cmd_log(
     }
 
     // Generate run ID and file paths
-    let run_id = generate_run_id(config_name, None);
+    let run_id = generate_run_id(&config_name, None);
     let jsonl_file = match output_file {
         Some(file) => PathBuf::from(file),
         None => data_dir.join(format!("{}.jsonl", run_id)),
@@ -742,6 +773,34 @@ fn cmd_metadata() -> Result<(), Box<dyn std::error::Error>> {
     let system_info = get_system_info()?;
     println!("{}", serde_json::to_string_pretty(&system_info)?);
     Ok(())
+}
+
+/// Show what auto-generated config name would be used
+fn cmd_show_config() -> Result<(), Box<dyn std::error::Error>> {
+    println!("🔍 Detecting system configuration...");
+
+    // Show system information used for naming
+    let system_info = get_system_info()?;
+    println!("💻 Operating System: {}", system_info.os);
+    println!("🏠 Hostname: {}", system_info.hostname);
+    println!("⚙️  CPU: {}", system_info.cpu);
+    println!("🖥️  Machine: {}", system_info.machine);
+
+    match generate_auto_config_name() {
+        Ok(config_name) => {
+            println!();
+            println!("🤖 Auto-generated config name: {}", config_name);
+            println!("💡 This name is based on your OS and hardware configuration");
+            println!("📋 Use this with: batlab log {}", config_name);
+            println!("🔄 Or just run: batlab log (auto-detects)");
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("❌ Failed to generate config name: {}", e);
+            eprintln!("💡 You may need to provide a config name manually");
+            std::process::exit(1);
+        }
+    }
 }
 
 /// Load and summarize all runs from the data directory

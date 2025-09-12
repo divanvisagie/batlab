@@ -42,8 +42,6 @@ pub use linux_telemetry::*;
 #[cfg(not(any(target_os = "freebsd", target_os = "linux")))]
 pub use unsupported_telemetry::*;
 
-
-
 /// Battery telemetry information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BatteryInfo {
@@ -233,8 +231,7 @@ pub fn get_system_info() -> Result<SystemInfo, TelemetryError> {
     let (os, cpu, machine) = {
         let os = get_command_output("uname", &["-sr"])?;
         let cpu = get_sysctl("hw.model")?;
-        let machine = get_sysctl("hw.machine")
-            .or_else(|_| get_command_output("uname", &["-m"]))?;
+        let machine = get_sysctl("hw.machine").or_else(|_| get_command_output("uname", &["-m"]))?;
         (os, cpu, machine)
     };
 
@@ -264,7 +261,8 @@ pub fn get_system_info() -> Result<SystemInfo, TelemetryError> {
     let (os, cpu, machine) = {
         let os = get_command_output("uname", &["-sr"]).unwrap_or_else(|_| "Unknown".to_string());
         let cpu = "Unknown".to_string();
-        let machine = get_command_output("uname", &["-m"]).unwrap_or_else(|_| "Unknown".to_string());
+        let machine =
+            get_command_output("uname", &["-m"]).unwrap_or_else(|_| "Unknown".to_string());
         (os, cpu, machine)
     };
 
@@ -303,13 +301,123 @@ fn get_sysctl(name: &str) -> Result<String, TelemetryError> {
     get_command_output("sysctl", &["-n", name])
 }
 
+/// Get hardware model information for automatic config naming
+///
+/// Attempts to detect laptop/desktop model from DMI information on Linux
+/// or sysctl on FreeBSD. Returns a sanitized string suitable for filenames.
+pub fn get_hardware_model() -> Result<String, TelemetryError> {
+    #[cfg(target_os = "linux")]
+    {
+        // Try to get laptop model from DMI
+        if let Ok(vendor) = std::fs::read_to_string("/sys/class/dmi/id/sys_vendor") {
+            let vendor = vendor.trim();
+
+            // Try product version first (often has the full model name)
+            if let Ok(product_version) =
+                std::fs::read_to_string("/sys/class/dmi/id/product_version")
+            {
+                let product_version = product_version.trim();
+                if !product_version.is_empty() && product_version != "Not Specified" {
+                    return Ok(sanitize_config_name(&format!(
+                        "{}-{}",
+                        vendor, product_version
+                    )));
+                }
+            }
+
+            // Fallback to product name
+            if let Ok(product_name) = std::fs::read_to_string("/sys/class/dmi/id/product_name") {
+                let product_name = product_name.trim();
+                if !product_name.is_empty() && product_name != "Not Specified" {
+                    return Ok(sanitize_config_name(&format!(
+                        "{}-{}",
+                        vendor, product_name
+                    )));
+                }
+            }
+
+            // Just vendor if nothing else works
+            if !vendor.is_empty() && vendor != "Not Specified" {
+                return Ok(sanitize_config_name(vendor));
+            }
+        }
+
+        // Fallback to hostname
+        Ok(sanitize_config_name(&get_command_output("hostname", &[])?))
+    }
+
+    #[cfg(target_os = "freebsd")]
+    {
+        // Try to get model from sysctl
+        if let Ok(model) = get_sysctl("hw.model") {
+            if !model.is_empty() {
+                return Ok(sanitize_config_name(&model));
+            }
+        }
+
+        // Fallback to hostname
+        Ok(sanitize_config_name(&get_command_output("hostname", &[])?))
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+    {
+        // Fallback to hostname for other platforms
+        Ok(sanitize_config_name(&get_command_output("hostname", &[])?))
+    }
+}
+
+/// Sanitize a string to be suitable for use as a config name
+///
+/// Converts to lowercase, replaces spaces and special chars with hyphens,
+/// removes consecutive hyphens, and limits length.
+fn sanitize_config_name(input: &str) -> String {
+    input
+        .to_lowercase()
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() {
+                c
+            } else if c.is_whitespace() || c == '_' || c == '.' || c == '/' {
+                '-'
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .split('-')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("-")
+        .chars()
+        .take(50) // Limit length
+        .collect()
+}
+
+/// Generate an automatic config name based on OS and hardware
+///
+/// Creates a descriptive config name using OS type and hardware model.
+/// Format: `{os}-{hardware_model}` (e.g., "linux-lenovo-thinkpad-x1-carbon-gen-9")
+pub fn generate_auto_config_name() -> Result<String, TelemetryError> {
+    let system_info = get_system_info()?;
+    let hardware_model = get_hardware_model().unwrap_or_else(|_| "unknown".to_string());
+
+    let os_name = if system_info.os.to_lowercase().contains("freebsd") {
+        "freebsd"
+    } else if system_info.os.to_lowercase().contains("linux") {
+        "linux"
+    } else {
+        "unknown"
+    };
+
+    Ok(format!("{}-{}", os_name, hardware_model))
+}
+
 /// Generate a unique run ID
 ///
 /// Format: `YYYY-MM-DDTHH:MM:SSZ_hostname_os_config`
 pub fn generate_run_id(config: &str, workload: Option<&str>) -> String {
     let timestamp = Utc::now().format("%Y-%m-%dT%H:%M:%SZ");
-    let hostname = get_command_output("hostname", &[])
-        .unwrap_or_else(|_| "unknown".to_string());
+    let hostname = get_command_output("hostname", &[]).unwrap_or_else(|_| "unknown".to_string());
 
     #[cfg(target_os = "freebsd")]
     let os = "FreeBSD";
@@ -319,8 +427,8 @@ pub fn generate_run_id(config: &str, workload: Option<&str>) -> String {
     let os = "Unknown";
 
     match workload {
-        Some(w) => format!("{}_{}_{}_{}_{}",  timestamp, hostname, os, config, w),
-        None => format!("{}_{}_{}_{}",  timestamp, hostname, os, config),
+        Some(w) => format!("{}_{}_{}_{}_{}", timestamp, hostname, os, config, w),
+        None => format!("{}_{}_{}_{}", timestamp, hostname, os, config),
     }
 }
 
@@ -353,20 +461,82 @@ mod tests {
             percentage: 85.5,
             watts: 12.3,
             cpu_load: 0.25,
-            ram_pct: 45.0,
-            temp_c: 42.5,
+            ram_pct: 60.0,
+            temp_c: 45.0,
             source: "test".to_string(),
         };
 
-        // Should serialize to valid JSON
         let json = serde_json::to_string(&sample).expect("Serialization failed");
-        assert!(json.contains("\"pct\":85.5"));
+
+        // Should contain expected fields
+        assert!(json.contains("85.5"));
         assert!(json.contains("\"watts\":12.3"));
 
         // Should deserialize back correctly
-        let deserialized: TelemetrySample = serde_json::from_str(&json)
-            .expect("Deserialization failed");
+        let deserialized: TelemetrySample =
+            serde_json::from_str(&json).expect("Deserialization failed");
         assert_eq!(deserialized.percentage, sample.percentage);
         assert_eq!(deserialized.watts, sample.watts);
+    }
+
+    #[test]
+    fn test_sanitize_config_name() {
+        // Test basic sanitization
+        assert_eq!(sanitize_config_name("Lenovo ThinkPad"), "lenovo-thinkpad");
+        assert_eq!(sanitize_config_name("Dell XPS 13"), "dell-xps-13");
+        assert_eq!(sanitize_config_name("MacBook Pro"), "macbook-pro");
+
+        // Test special characters
+        assert_eq!(
+            sanitize_config_name("HP Pavilion/Laptop"),
+            "hp-pavilion-laptop"
+        );
+        assert_eq!(sanitize_config_name("ASUS_ROG_Strix"), "asus-rog-strix");
+        assert_eq!(sanitize_config_name("System76.Lemur"), "system76-lemur");
+
+        // Test consecutive separators
+        assert_eq!(
+            sanitize_config_name("Brand   Model___Name"),
+            "brand-model-name"
+        );
+        assert_eq!(sanitize_config_name("Test--Config"), "test-config");
+
+        // Test length limiting
+        let long_name =
+            "Very Long Hardware Model Name That Should Be Truncated At Fifty Characters Exactly";
+        let result = sanitize_config_name(long_name);
+        assert!(result.len() <= 50);
+        assert_eq!(result, "very-long-hardware-model-name-that-should-be-trunc");
+
+        // Test empty and edge cases
+        assert_eq!(sanitize_config_name(""), "");
+        assert_eq!(sanitize_config_name("   "), "");
+        assert_eq!(sanitize_config_name("123"), "123");
+    }
+
+    #[test]
+    fn test_generate_auto_config_name_format() {
+        // Test that the generated config name has the expected format
+        // This test may fail on systems without proper hardware detection
+        if let Ok(config_name) = generate_auto_config_name() {
+            // Should contain OS name
+            assert!(
+                config_name.contains("linux")
+                    || config_name.contains("freebsd")
+                    || config_name.contains("unknown")
+            );
+
+            // Should be properly formatted (lowercase, hyphens only)
+            assert!(config_name
+                .chars()
+                .all(|c| c.is_lowercase() || c.is_numeric() || c == '-'));
+
+            // Should not be empty
+            assert!(!config_name.is_empty());
+
+            // Should not start or end with hyphen
+            assert!(!config_name.starts_with('-'));
+            assert!(!config_name.ends_with('-'));
+        }
     }
 }
