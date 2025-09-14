@@ -415,7 +415,12 @@ generate_index() {
 <body>
     <div class="container">
         <div class="header">
-            <img src="batlab.png" alt="batlab logo" />
+            <div class="header-icons">
+                <i class="fab fa-linux" aria-label="Linux" title="Linux">🐧</i>
+                <i class="fas fa-battery-three-quarters" aria-label="Battery" title="Battery Testing">🔋</i>
+                <i class="fab fa-freebsd" aria-label="FreeBSD" title="FreeBSD">⚡</i>
+                <i class="fab fa-openbsd" aria-label="OpenBSD" title="OpenBSD">🛡️</i>
+            </div>
             <h1>batlab</h1>
             <p>Battery Test Reports Dashboard</p>
         </div>

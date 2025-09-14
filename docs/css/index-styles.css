@@ -1,3 +1,10 @@
+@import url("https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css");
+
+:root {
+    --accent-color: #cc0000;
+    --accent-color-dark: #990000;
+}
+
 body {
     font-family:
         "Monaco", "Menlo", "Ubuntu Mono", "Consolas", "source-code-pro",
@@ -16,7 +23,7 @@ body {
     background: #ffffff;
     padding: 40px;
     border-radius: 15px;
-    border: 3px solid #cc0000;
+    border: 3px solid var(--accent-color);
 }
 
 .header {
@@ -24,14 +31,57 @@ body {
     margin-bottom: 40px;
 }
 
-.header img {
-    max-width: 200px;
-    height: auto;
+.header-icons {
+    font-size: 4em;
     margin-bottom: 20px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+    color: var(--accent-color);
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.header-icons i {
+    transition:
+        transform 0.3s ease,
+        filter 0.3s ease;
+}
+
+.header-icons i:hover {
+    transform: scale(1.1);
+    filter: brightness(1.2);
+}
+
+.header-icons .fa-linux {
+    color: #000000;
+}
+
+.header-icons .fa-freebsd {
+    color: #cc0000;
+}
+
+.header-icons .fa-openbsd {
+    color: #ff6b00;
+}
+
+.header-icons .fa-battery-three-quarters {
+    color: #28a745;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.7;
+    }
 }
 
 .header h1 {
-    color: #cc0000;
+    color: var(--accent-color);
     font-size: 2.5em;
     margin-bottom: 10px;
     font-family:
@@ -56,7 +106,7 @@ body {
 
 .report-card {
     background: #ffffff;
-    border: 2px solid #cc0000;
+    border: 2px solid var(--accent-color);
     border-radius: 10px;
     padding: 20px;
     transition:
@@ -66,13 +116,13 @@ body {
 
 .report-card:hover {
     transform: translateY(-2px);
-    border-color: #990000;
+    border-color: var(--accent-color-dark);
 }
 
 .report-card h3 {
     margin-top: 0;
-    color: #cc0000;
-    border-bottom: 2px solid #cc0000;
+    color: var(--accent-color);
+    border-bottom: 2px solid var(--accent-color);
     padding-bottom: 10px;
     font-family:
         "Monaco", "Menlo", "Ubuntu Mono", "Consolas", "source-code-pro",
@@ -90,7 +140,7 @@ body {
 .report-card a {
     display: inline-block;
     padding: 10px 20px;
-    background: #cc0000;
+    background: var(--accent-color);
     color: white;
     text-decoration: none;
     border-radius: 5px;
@@ -102,20 +152,20 @@ body {
 }
 
 .report-card a:hover {
-    background: #990000;
+    background: var(--accent-color-dark);
 }
 
 .no-reports {
     text-align: center;
     background: #fff8f8;
-    border: 2px solid #cc0000;
+    border: 2px solid var(--accent-color);
     padding: 30px;
     border-radius: 10px;
     margin: 20px 0;
 }
 
 .no-reports h3 {
-    color: #cc0000;
+    color: var(--accent-color);
     margin-top: 0;
     font-family:
         "Monaco", "Menlo", "Ubuntu Mono", "Consolas", "source-code-pro",
@@ -124,7 +174,7 @@ body {
 
 .about {
     background: #f8f8f8;
-    border-left: 4px solid #cc0000;
+    border-left: 4px solid var(--accent-color);
     padding: 20px;
     margin: 30px 0;
     border-radius: 0 8px 8px 0;
@@ -132,7 +182,7 @@ body {
 
 .about h3 {
     margin-top: 0;
-    color: #cc0000;
+    color: var(--accent-color);
     font-family:
         "Monaco", "Menlo", "Ubuntu Mono", "Consolas", "source-code-pro",
         monospace;
@@ -151,13 +201,13 @@ body {
 }
 
 .about a {
-    color: #cc0000;
+    color: var(--accent-color);
     text-decoration: none;
     font-weight: bold;
 }
 
 .about a:hover {
-    color: #990000;
+    color: var(--accent-color-dark);
     text-decoration: underline;
 }
 
@@ -168,7 +218,7 @@ body {
     padding: 20px;
     border-radius: 10px;
     margin: 20px 0;
-    border: 2px solid #cc0000;
+    border: 2px solid var(--accent-color);
 }
 
 .stat {
@@ -178,7 +228,7 @@ body {
 .stat-value {
     font-size: 2em;
     font-weight: bold;
-    color: #cc0000;
+    color: var(--accent-color);
     font-family:
         "Monaco", "Menlo", "Ubuntu Mono", "Consolas", "source-code-pro",
         monospace;

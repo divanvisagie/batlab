@@ -1,5 +1,14 @@
+@import url("https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css");
+
+:root {
+    --accent-color: #cc0000;
+    --accent-color-dark: #990000;
+}
+
 body {
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+    font-family:
+        "Monaco", "Menlo", "Ubuntu Mono", "Consolas", "source-code-pro",
+        monospace;
     line-height: 1.6;
     margin: 0;
     padding: 20px;
@@ -13,20 +22,24 @@ body {
     background: #ffffff;
     padding: 30px;
     border-radius: 10px;
-    border: 2px solid #cc0000;
+    border: 2px solid var(--accent-color);
 }
 
 h1 {
-    color: #cc0000;
-    border-bottom: 3px solid #cc0000;
+    color: var(--accent-color);
+    border-bottom: 3px solid var(--accent-color);
     padding-bottom: 10px;
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+    font-family:
+        "Monaco", "Menlo", "Ubuntu Mono", "Consolas", "source-code-pro",
+        monospace;
 }
 
 h2 {
-    color: #cc0000;
+    color: var(--accent-color);
     margin-top: 30px;
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+    font-family:
+        "Monaco", "Menlo", "Ubuntu Mono", "Consolas", "source-code-pro",
+        monospace;
 }
 
 .metadata {
@@ -34,13 +47,15 @@ h2 {
     padding: 20px;
     border-radius: 5px;
     margin: 20px 0;
-    border-left: 4px solid #cc0000;
+    border-left: 4px solid var(--accent-color);
 }
 
 .metadata table {
     width: 100%;
     border-collapse: collapse;
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+    font-family:
+        "Monaco", "Menlo", "Ubuntu Mono", "Consolas", "source-code-pro",
+        monospace;
 }
 
 .metadata td {
@@ -50,7 +65,7 @@ h2 {
 
 .metadata td:first-child {
     font-weight: bold;
-    color: #cc0000;
+    color: var(--accent-color);
     width: 150px;
 }
 
@@ -63,24 +78,28 @@ h2 {
 
 .stat-card {
     background: #ffffff;
-    border: 2px solid #cc0000;
+    border: 2px solid var(--accent-color);
     border-radius: 8px;
     padding: 20px;
 }
 
 .stat-card h3 {
     margin-top: 0;
-    color: #cc0000;
-    border-bottom: 2px solid #cc0000;
+    color: var(--accent-color);
+    border-bottom: 2px solid var(--accent-color);
     padding-bottom: 5px;
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+    font-family:
+        "Monaco", "Menlo", "Ubuntu Mono", "Consolas", "source-code-pro",
+        monospace;
 }
 
 .stat-value {
     font-size: 1.2em;
     font-weight: bold;
-    color: #cc0000;
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+    color: var(--accent-color);
+    font-family:
+        "Monaco", "Menlo", "Ubuntu Mono", "Consolas", "source-code-pro",
+        monospace;
 }
 
 .graph-container {
@@ -89,7 +108,7 @@ h2 {
     background: #ffffff;
     padding: 20px;
     border-radius: 8px;
-    border: 2px solid #cc0000;
+    border: 2px solid var(--accent-color);
 }
 
 .graph-container img {
@@ -103,28 +122,32 @@ h2 {
     display: inline-block;
     margin: 20px 0;
     padding: 10px 20px;
-    background: #cc0000;
+    background: var(--accent-color);
     color: white;
     text-decoration: none;
     border-radius: 5px;
     transition: background 0.3s;
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+    font-family:
+        "Monaco", "Menlo", "Ubuntu Mono", "Consolas", "source-code-pro",
+        monospace;
 }
 
 .back-link:hover {
-    background: #990000;
+    background: var(--accent-color-dark);
 }
 
 .insights {
     background: #fff8f8;
-    border: 2px solid #cc0000;
+    border: 2px solid var(--accent-color);
     padding: 15px;
     border-radius: 5px;
 }
 
 .insights h4 {
-    color: #cc0000;
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+    color: var(--accent-color);
+    font-family:
+        "Monaco", "Menlo", "Ubuntu Mono", "Consolas", "source-code-pro",
+        monospace;
     margin-top: 0;
 }
 
@@ -134,5 +157,7 @@ h2 {
     border-top: 1px solid #cccccc;
     color: #666666;
     font-size: 0.9em;
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+    font-family:
+        "Monaco", "Menlo", "Ubuntu Mono", "Consolas", "source-code-pro",
+        monospace;
 }
