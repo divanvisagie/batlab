@@ -40,6 +40,19 @@ if ! command -v jq &> /dev/null || ! command -v gnuplot &> /dev/null; then
     exit 1
 fi
 
+# Detect OS for date command compatibility
+OS_TYPE=$(uname -s)
+parse_iso_date() {
+    local iso_date="$1"
+    if [[ "$OS_TYPE" == "Darwin" ]]; then
+        # macOS/BSD date command
+        date -j -f "%Y-%m-%dT%H:%M:%S" "${iso_date:0:19}" +%s 2>/dev/null
+    else
+        # GNU/Linux date command
+        date -d "$iso_date" +%s 2>/dev/null
+    fi
+}
+
 # Create docs directory if it doesn't exist
 mkdir -p "$DOCS_DIR/reports"
 
@@ -91,10 +104,17 @@ generate_graph() {
 
     # Extract and convert data to hours since start
     jq -r '[.t, .pct, .watts, (.cpu_load * 100), .temp_c] | @tsv' "$jsonl_file" | \
-    awk -F'\t' '
+    awk -F'\t' -v os_type="$OS_TYPE" '
     BEGIN { start_time = 0 }
     {
-        cmd = "date -d \"" $1 "\" +%s 2>/dev/null"
+        if (os_type == "Darwin") {
+            # macOS/BSD date parsing
+            iso_trimmed = substr($1, 1, 19)
+            cmd = "date -j -f \"%Y-%m-%dT%H:%M:%S\" \"" iso_trimmed "\" +%s 2>/dev/null"
+        } else {
+            # GNU/Linux date parsing
+            cmd = "date -d \"" $1 "\" +%s 2>/dev/null"
+        }
         cmd | getline epoch
         close(cmd)
 
@@ -158,10 +178,17 @@ calculate_stats() {
 
     # Extract numeric data
     jq -r '[.t, .pct, .watts, (.cpu_load * 100), .temp_c] | @tsv' "$jsonl_file" | \
-    awk -F'\t' '
+    awk -F'\t' -v os_type="$OS_TYPE" '
     BEGIN { start_time = 0 }
     {
-        cmd = "date -d \"" $1 "\" +%s 2>/dev/null"
+        if (os_type == "Darwin") {
+            # macOS/BSD date parsing
+            iso_trimmed = substr($1, 1, 19)
+            cmd = "date -j -f \"%Y-%m-%dT%H:%M:%S\" \"" iso_trimmed "\" +%s 2>/dev/null"
+        } else {
+            # GNU/Linux date parsing
+            cmd = "date -d \"" $1 "\" +%s 2>/dev/null"
+        }
         cmd | getline epoch
         close(cmd)
 
