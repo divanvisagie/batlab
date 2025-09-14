@@ -416,10 +416,10 @@ generate_index() {
     <div class="container">
         <div class="header">
             <div class="header-icons">
-                <i class="fab fa-linux" aria-label="Linux" title="Linux">🐧</i>
-                <i class="fas fa-battery-three-quarters" aria-label="Battery" title="Battery Testing">🔋</i>
-                <i class="fab fa-freebsd" aria-label="FreeBSD" title="FreeBSD">⚡</i>
-                <i class="fab fa-openbsd" aria-label="OpenBSD" title="OpenBSD">🛡️</i>
+                <i class="fab fa-linux" aria-label="Linux" title="Linux"></i>
+                <i class="fas fa-battery-three-quarters" aria-label="Battery" title="Battery Testing"></i>
+                <i class="fab fa-freebsd" aria-label="FreeBSD" title="FreeBSD"></i>
+                <span class="openbsd-icon" aria-label="OpenBSD" title="OpenBSD">🐡</span>
             </div>
             <h1>batlab</h1>
             <p>Battery Test Reports Dashboard</p>

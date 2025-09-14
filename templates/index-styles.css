@@ -42,22 +42,20 @@ body {
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-.header-icons i {
+.header-icons i,
+.header-icons span {
     transition:
         transform 0.3s ease,
         filter 0.3s ease;
     font-style: normal;
-    position: relative;
+    width: 1.2em;
+    text-align: center;
+    font-size: 1em;
+    display: inline-block;
 }
 
-/* Emoji fallback - shows when Font Awesome doesn't load */
-.header-icons i {
-    font-family:
-        "Font Awesome 6 Free", "Font Awesome 6 Brands", "Apple Color Emoji",
-        "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
-}
-
-.header-icons i:hover {
+.header-icons i:hover,
+.header-icons span:hover {
     transform: scale(1.1);
     filter: brightness(1.2);
 }
@@ -67,15 +65,21 @@ body {
 }
 
 .header-icons .fa-freebsd {
-    color: #cc0000;
+    color: var(--accent-color);
 }
 
-.header-icons .fa-openbsd {
-    color: #ff6b00;
+.header-icons .openbsd-icon {
+    font-family:
+        "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+    font-size: 1em;
 }
 
 .header-icons .fa-battery-three-quarters {
     color: #28a745;
+}
+
+/* Add subtle animation to the battery */
+.header-icons .fa-battery-three-quarters {
     animation: pulse 2s infinite;
 }
 
