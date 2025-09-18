@@ -563,7 +563,9 @@ main() {
     case "$mode" in
         "single")
             copy_css_files
-            report_name=$(basename "${target%.jsonl}" | sed 's/.*_//')
+            # Extract unique report name including identifier to avoid collisions
+            filename=$(basename "${target%.jsonl}")
+            report_name=$(echo "$filename" | sed 's/^[0-9T:-]*Z_//' | sed 's/_gramr_//')
             generate_html_report "$target" "$report_name"
             generate_index
             echo "🌐 Open: file://$DOCS_DIR/index.html"
@@ -574,7 +576,9 @@ main() {
             local count=0
             if [[ -d "$DATA_DIR" ]]; then
                 while IFS= read -r -d '' jsonl_file; do
-                    report_name=$(basename "${jsonl_file%.jsonl}" | sed 's/.*_//')
+                    # Extract unique report name including identifier to avoid collisions
+                    filename=$(basename "${jsonl_file%.jsonl}")
+                    report_name=$(echo "$filename" | sed 's/^[0-9T:-]*Z_//' | sed 's/_gramr_//')
                     generate_html_report "$jsonl_file" "$report_name"
                     count=$((count + 1))
                 done < <(find "$DATA_DIR" -name "*.jsonl" -type f -print0 2>/dev/null)

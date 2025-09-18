@@ -1,5 +1,5 @@
 {
-  "config": "freebsd-11th-gen-intel-r-core-tm-i7-1185g7-3-00ghz",
+  "config": "intel_kde_freebsd-11th-gen-intel-r-core-tm-i7-1185g7-3-00ghz",
   "host": "gramr",
   "os": "FreeBSD 14.3-RELEASE",
   "run_id": "2025-09-14T08:13:34Z_gramr_FreeBSD_freebsd-11th-gen-intel-r-core-tm-i7-1185g7-3-00ghz",
