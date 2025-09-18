@@ -460,13 +460,48 @@ EOF
             local report_config="$report"
             local report_host="Unknown"
             local report_date="Unknown"
+            local duration="N/A"
+            local battery_drain="N/A"
 
-            # Look for corresponding data file
-            local data_file=$(find "$DATA_DIR" -name "*${report}*.meta.json" | head -1)
+            # Look for corresponding data file with precise matching
+            local data_file=""
+
+            # Create a reverse mapping from report name to original filename pattern
+            if [[ "$report" == "powerdFreeBSD_freebsd-11th-gen-intel-r-core-tm-i7-1185g7-3-00ghz" ]]; then
+                data_file=$(find "$DATA_DIR" -name "*powerd_*FreeBSD*.meta.json" | head -1)
+            elif [[ "$report" == "kdeFreeBSD_freebsd-11th-gen-intel-r-core-tm-i7-1185g7-3-00ghz" ]]; then
+                data_file=$(find "$DATA_DIR" -name "*kde_*FreeBSD*.meta.json" | head -1)
+            elif [[ "$report" == "gramr_Linux_debian-default" ]]; then
+                data_file=$(find "$DATA_DIR" -name "*debian-default*.meta.json" | head -1)
+            elif [[ "$report" == "gramr_Linux_linux-lenovo-thinkpad-x1-carbon-gen-9" ]]; then
+                data_file=$(find "$DATA_DIR" -name "*linux-lenovo-thinkpad-x1-carbon-gen-9*.meta.json" | head -1)
+            else
+                # Fallback: try exact match first
+                data_file=$(find "$DATA_DIR" -name "*${report}*.meta.json" | head -1)
+
+                # If no match, try extracting the config part
+                if [[ -z "$data_file" || ! -f "$data_file" ]]; then
+                    local config_part=$(echo "$report" | sed 's/.*_//')
+                    data_file=$(find "$DATA_DIR" -name "*${config_part}*.meta.json" | head -1)
+                fi
+            fi
+
             if [[ -f "$data_file" ]]; then
                 report_config=$(jq -r '.config // "Unknown"' "$data_file" 2>/dev/null || echo "$report")
                 report_host=$(jq -r '.host // "Unknown"' "$data_file" 2>/dev/null || echo "Unknown")
                 report_date=$(jq -r '.start_time // "Unknown"' "$data_file" 2>/dev/null | cut -d'T' -f1 || echo "Unknown")
+
+                # Get corresponding JSONL file for battery stats
+                local jsonl_file="${data_file%.meta.json}.jsonl"
+                if [[ -f "$jsonl_file" ]]; then
+                    local stats_output=$(calculate_stats "$jsonl_file")
+                    duration=$(echo "$stats_output" | grep "^duration:" | cut -d: -f2)
+                    local battery_drain_val=$(echo "$stats_output" | grep "^battery_drain:" | cut -d: -f2)
+                    if [[ -n "$duration" && -n "$battery_drain_val" ]]; then
+                        duration=$(printf "%.1fh" "$duration")
+                        battery_drain=$(printf "%.0f%%" "$battery_drain_val")
+                    fi
+                fi
             fi
 
             cat >> "$index_file" << EOF
@@ -474,6 +509,7 @@ EOF
                 <h3>$report_config</h3>
                 <p><strong>Host:</strong> $report_host</p>
                 <p><strong>Date:</strong> $report_date</p>
+                <p><strong>Duration:</strong> $duration • <strong>Battery:</strong> $battery_drain drained</p>
                 <p><strong>Report ID:</strong> $report</p>
                 <a href="reports/${report}.html">View Report →</a>
             </div>
