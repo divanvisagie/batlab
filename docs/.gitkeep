@@ -1,3 +1,0 @@
-# This file ensures the docs/ directory is preserved in git
-# Generated HTML reports and graphs will be created here by batlab-report
-# but should not be committed to the repository
