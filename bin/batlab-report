@@ -102,8 +102,18 @@ generate_graph() {
     local temp_data=$(mktemp)
     trap "rm -f $temp_data" EXIT
 
-    # Extract and convert data to hours since start
-    jq -r '[.t, .pct, .watts, (.cpu_load * 100), .temp_c] | @tsv' "$jsonl_file" | \
+    # Fix malformed JSON and extract data to hours since start
+    # For large datasets, sample every Nth line to speed up processing
+    local total_lines=$(wc -l < "$jsonl_file")
+    local sample_rate=1
+    if [[ $total_lines -gt 5000 ]]; then
+        sample_rate=$((total_lines / 2000))  # Target ~2000 data points max
+        echo "📊 Large dataset detected ($total_lines lines), sampling every ${sample_rate} lines for graph"
+    fi
+
+    sed 's/"temp_c": ,/"temp_c": null,/g' "$jsonl_file" | \
+    awk -v rate="$sample_rate" 'rate == 1 || NR % rate == 1' | \
+    jq -r '[.t, .pct, .watts, (.cpu_load * 100), (.temp_c // 0)] | @tsv' | \
     awk -F'\t' -v os_type="$OS_TYPE" '
     BEGIN { start_time = 0 }
     {
@@ -117,6 +127,9 @@ generate_graph() {
         }
         cmd | getline epoch
         close(cmd)
+
+        # Skip if date parsing failed
+        if (epoch == "" || epoch == 0) next
 
         if (start_time == 0) start_time = epoch
         hours = (epoch - start_time) / 3600
@@ -176,8 +189,10 @@ calculate_stats() {
     local temp_data=$(mktemp)
     trap "rm -f $temp_data" EXIT
 
-    # Extract numeric data
-    jq -r '[.t, .pct, .watts, (.cpu_load * 100), .temp_c] | @tsv' "$jsonl_file" | \
+    # Fix malformed JSON and extract numeric data (use all data for stats)
+    echo "📊 Calculating statistics from $(wc -l < "$jsonl_file") data points..."
+    sed 's/"temp_c": ,/"temp_c": null,/g' "$jsonl_file" | \
+    jq -r '[.t, .pct, .watts, (.cpu_load * 100), (.temp_c // 0)] | @tsv' | \
     awk -F'\t' -v os_type="$OS_TYPE" '
     BEGIN { start_time = 0 }
     {
@@ -300,6 +315,18 @@ generate_html_report() {
     local avg_cpu=$(echo "$stats_output" | grep "^avg_cpu:" | cut -d: -f2)
     local avg_temp=$(echo "$stats_output" | grep "^avg_temp:" | cut -d: -f2)
 
+    # Helper function to safely format numbers
+    safe_printf() {
+        local format="$1"
+        local value="$2"
+        local default="$3"
+        if [[ "$value" =~ ^[0-9]*\.?[0-9]+$ ]]; then
+            printf "$format" "$value"
+        else
+            echo "$default"
+        fi
+    }
+
     # Generate HTML using template as reference but with heredoc for now
     cat > "$html_file" << EOF
 <!DOCTYPE html>
@@ -323,30 +350,30 @@ generate_html_report() {
                 <tr><td>Operating System</td><td>$os</td></tr>
                 <tr><td>Start Time</td><td>$start_time</td></tr>
                 <tr><td>Run ID</td><td>$run_id</td></tr>
-                <tr><td>Sampling Rate</td><td>$(printf "%.3f" "$sampling_hz") Hz</td></tr>
+                <tr><td>Sampling Rate</td><td>$(safe_printf "%.3f" "$sampling_hz" "$sampling_hz") Hz</td></tr>
             </table>
         </div>
 
         <div class="stats">
             <div class="stat-card">
                 <h3>Test Duration</h3>
-                <div class="stat-value">$(printf "%.1f" "$duration") hours</div>
-                <p>Total test runtime with $(printf "%.0f" "$samples") data samples</p>
+                <div class="stat-value">$(safe_printf "%.1f" "$duration" "N/A") hours</div>
+                <p>Total test runtime with $(safe_printf "%.0f" "$samples" "N/A") data samples</p>
             </div>
             <div class="stat-card">
                 <h3>Battery Performance</h3>
-                <div class="stat-value">$(printf "%.1f" "$start_pct")% → $(printf "%.1f" "$end_pct")%</div>
-                <p>Drained $(printf "%.1f" "$battery_drain")% at $(printf "%.1f" "$drain_rate")%/hour</p>
+                <div class="stat-value">$(safe_printf "%.1f" "$start_pct" "N/A")% → $(safe_printf "%.1f" "$end_pct" "N/A")%</div>
+                <p>Drained $(safe_printf "%.1f" "$battery_drain" "N/A")% at $(safe_printf "%.1f" "$drain_rate" "N/A")%/hour</p>
             </div>
             <div class="stat-card">
                 <h3>Power Consumption</h3>
-                <div class="stat-value">$(printf "%.1f" "$avg_watts")W average</div>
-                <p>Range: $(printf "%.1f" "$min_watts")W - $(printf "%.1f" "$max_watts")W</p>
+                <div class="stat-value">$(safe_printf "%.1f" "$avg_watts" "N/A")W average</div>
+                <p>Range: $(safe_printf "%.1f" "$min_watts" "N/A")W - $(safe_printf "%.1f" "$max_watts" "N/A")W</p>
             </div>
             <div class="stat-card">
                 <h3>System Load</h3>
-                <div class="stat-value">$(printf "%.1f" "$avg_cpu")% CPU</div>
-                <p>Average temperature: $(printf "%.1f" "$avg_temp")°C</p>
+                <div class="stat-value">$(safe_printf "%.1f" "$avg_cpu" "N/A")% CPU</div>
+                <p>Average temperature: $(safe_printf "%.1f" "$avg_temp" "N/A")°C</p>
             </div>
         </div>
 
@@ -359,10 +386,10 @@ generate_html_report() {
         <div class="insights">
             <h4>Key Observations:</h4>
             <ul>
-                <li><strong>Battery Efficiency:</strong> $(printf "%.1f" "$battery_drain")% battery consumed over $(printf "%.1f" "$duration") hours</li>
-                <li><strong>Power Profile:</strong> Average consumption of $(printf "%.1f" "$avg_watts")W with peaks up to $(printf "%.1f" "$max_watts")W</li>
-                <li><strong>System Activity:</strong> CPU load averaged $(printf "%.1f" "$avg_cpu")% throughout the test</li>
-                <li><strong>Thermal Management:</strong> System temperature averaged $(printf "%.1f" "$avg_temp")°C</li>
+                <li><strong>Battery Efficiency:</strong> $(safe_printf "%.1f" "$battery_drain" "N/A")% battery consumed over $(safe_printf "%.1f" "$duration" "N/A") hours</li>
+                <li><strong>Power Profile:</strong> Average consumption of $(safe_printf "%.1f" "$avg_watts" "N/A")W with peaks up to $(safe_printf "%.1f" "$max_watts" "N/A")W</li>
+                <li><strong>System Activity:</strong> CPU load averaged $(safe_printf "%.1f" "$avg_cpu" "N/A")% throughout the test</li>
+                <li><strong>Thermal Management:</strong> System temperature averaged $(safe_printf "%.1f" "$avg_temp" "N/A")°C</li>
             </ul>
         </div>
 
@@ -497,7 +524,7 @@ EOF
                     local stats_output=$(calculate_stats "$jsonl_file")
                     duration=$(echo "$stats_output" | grep "^duration:" | cut -d: -f2)
                     local battery_drain_val=$(echo "$stats_output" | grep "^battery_drain:" | cut -d: -f2)
-                    if [[ -n "$duration" && -n "$battery_drain_val" ]]; then
+                    if [[ -n "$duration" && -n "$battery_drain_val" ]] && [[ "$duration" =~ ^[0-9]*\.?[0-9]+$ ]] && [[ "$battery_drain_val" =~ ^[0-9]*\.?[0-9]+$ ]]; then
                         duration=$(printf "%.1fh" "$duration")
                         battery_drain=$(printf "%.0f%%" "$battery_drain_val")
                     fi
