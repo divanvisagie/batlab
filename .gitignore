@@ -1,1 +1,40 @@
-target/
+# C build artifacts
+bin/
+*.so
+*.a
+*.dylib
+batlab
+
+# Debug files
+*.dSYM/
+core
+*.core
+
+# Temporary files
+*~
+*.bak
+*.tmp
+*.swp
+*.swo
+
+# IDE files
+.vscode/
+.idea/
+*.xcodeproj/
+*.xcworkspace/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test data
+/data/test-*
+
+
+# Runtime files
+*.pid
+*.log
+
+# Package files
+*.tar.gz
+*.zip

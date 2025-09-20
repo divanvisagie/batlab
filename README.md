@@ -1,6 +1,6 @@
 # batlab - Battery Test Harness
 
-A tool for measuring and comparing battery life between FreeBSD and Linux configurations on laptops.
+A cross-platform C tool for measuring and comparing battery life between FreeBSD and Linux configurations on laptops.
 
 ![batlab logo](docs/logo-256.png)
 
@@ -19,22 +19,23 @@ FreeBSD laptop users often report poor battery life compared to Linux, but lack 
 ## Quick Start
 
 ```bash
-# 1. Initialize
-batlab init
+# 1. Build and initialize
+make
+./batlab init
 
 # 2. Manually configure your system power management
 # (Set CPU governors, powerd settings, C-states, etc.)
 
 # 3. Start logging (Terminal 1)
-batlab log freebsd-powerd-aggressive
+./batlab log freebsd-powerd-aggressive
 
 # 4. Run workload (Terminal 2)
-batlab run idle
+./batlab run idle
 
 # 5. Stop both with Ctrl+C when done
 
 # 6. View results
-batlab report
+./batlab report
 
 # 7. Generate HTML reports (optional)
 ./scripts/batlab-report --all
@@ -56,14 +57,15 @@ batlab report
 ```bash
 git clone <repository>
 cd batlab
-cargo install --path .
-batlab init
+make
+./batlab init
 ```
 
 ### System Requirements
 - Battery-powered laptop
 - FreeBSD or Linux (macOS partially supported for development)
-- Rust toolchain (for building from source)
+- C99 compiler (gcc, clang, or cc)
+- Standard C library and math library (libm)
 - Shell access for workload scripts
 
 **Recommended for suspension prevention:**
@@ -71,22 +73,23 @@ batlab init
 - macOS: Built-in `caffeinate` (automatic)
 - FreeBSD: Manual power management configuration
 
-**FreeBSD users:** Install Rust via `pkg install rust` or ports
-**Linux users:** Install Rust via package manager or [rustup.rs](https://rustup.rs/)
+**FreeBSD users:** System compiler available by default (`cc`)
+**Linux users:** Install build tools: `apt install build-essential` or `yum groupinstall "Development Tools"`
 
 ## Usage
 
 ### Basic Commands
 
 ```bash
-batlab init                      # Set up directories
-batlab log <config-name>         # Start logging (Terminal 1)
-batlab run <workload>            # Run workload (Terminal 2)
-batlab report                    # View text results
+make                             # Build the binary (creates bin/batlab + symlink)
+./batlab init                    # Set up directories
+./batlab log <config-name>       # Start logging (Terminal 1)
+./batlab run <workload>          # Run workload (Terminal 2)
+./batlab report                  # View text results
 ./scripts/batlab-report          # Generate HTML report
 ./scripts/batlab-report --all    # Generate all HTML reports
-batlab export --csv data.csv     # Export for analysis
-batlab list workloads            # See available workloads
+./batlab export --csv data.csv   # Export for analysis
+./batlab list workloads          # See available workloads
 ```
 
 ### Example Research Workflow
@@ -94,8 +97,8 @@ batlab list workloads            # See available workloads
 **Linux baseline:**
 ```bash
 # Configure Linux with default power management
-batlab log linux-default
-batlab run idle    # In second terminal, run until low battery
+./batlab log linux-default
+./batlab run idle    # In second terminal, run until low battery
 ```
 
 **FreeBSD comparison:**
@@ -105,15 +108,15 @@ sysctl hw.acpi.cpu.cx_lowest=C8
 powerd_flags="-a adaptive -b minimum"
 service powerd restart
 
-batlab log freebsd-c8-minimum
-batlab run idle    # Same workload, compare results
+./batlab log freebsd-c8-minimum
+./batlab run idle    # Same workload, compare results
 ```
 
 **Analysis:**
 ```bash
-batlab report --group-by config
+./batlab report --group-by config
 ./scripts/batlab-report --all    # Generate HTML reports
-batlab export --csv comparison.csv
+./batlab export --csv comparison.csv
 # Open docs/index.html to view detailed comparisons
 ```
 
@@ -171,7 +174,28 @@ This tool is designed for the research community:
 - **Improve FreeBSD support** - enhance power management detection
 - **Share configurations** - document effective power settings
 
-See `ARCHITECTURE.md` for technical implementation details.
+## Building and Development
+
+The tool is implemented in C for maximum compatibility and performance:
+
+```bash
+# Quick build (creates bin/batlab and ./batlab symlink)
+make
+
+# Debug build
+make debug
+
+# Install system-wide
+sudo make install
+
+# Clean build artifacts (removes bin/ directory)
+make clean
+
+# Run tests
+make test
+```
+
+See `src/README.md` for detailed technical implementation.
 
 ## License
 
