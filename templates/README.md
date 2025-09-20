@@ -2,6 +2,8 @@
 
 This directory contains HTML templates and CSS files for the batlab reporting system.
 
+**Note:** As of the C implementation, emoji have been removed from all workload scripts for maximum system compatibility.
+
 ## Template Structure
 
 ### Main Templates
@@ -83,6 +85,14 @@ templates/
 ├── no-reports.html.partial   # No reports message
 └── report-card.html.partial  # Report card component
 ```
+
+## System Compatibility
+
+All emoji have been removed from workload scripts to ensure compatibility across different systems:
+- FreeBSD base system terminals
+- Linux console environments
+- SSH connections without Unicode support
+- Older terminal emulators
 
 ## Future Improvements
 

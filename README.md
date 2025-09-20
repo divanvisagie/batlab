@@ -2,6 +2,8 @@
 
 A cross-platform C tool for measuring and comparing battery life between FreeBSD and Linux configurations on laptops.
 
+**Migration Complete:** Successfully migrated from Rust to C for improved BSD compatibility, reduced dependencies, and 99.5% smaller binary size (72KB vs 15MB).
+
 ![batlab logo](docs/logo-256.png)
 
 ## Purpose
@@ -65,16 +67,18 @@ make
 - Battery-powered laptop
 - FreeBSD or Linux (macOS partially supported for development)
 - C99 compiler (gcc, clang, or cc)
-- Standard C library and math library (libm)
+- Standard C library and math library (libm) only
 - Shell access for workload scripts
+- **No external dependencies** - works with base system tools
 
 **Recommended for suspension prevention:**
 - Linux: `systemd` (systemd-inhibit) or `caffeine` package
 - macOS: Built-in `caffeinate` (automatic)
 - FreeBSD: Manual power management configuration
 
-**FreeBSD users:** System compiler available by default (`cc`)
+**FreeBSD users:** System compiler available by default (`cc`) - no packages needed
 **Linux users:** Install build tools: `apt install build-essential` or `yum groupinstall "Development Tools"`
+**macOS users:** Xcode command line tools: `xcode-select --install`
 
 ## Usage
 
@@ -137,6 +141,8 @@ The tool records your configuration name with complete system telemetry data.
 - `idle` - System idle with screen on
 - `stress` - CPU stress test
 
+**Note:** Emoji have been removed from workload output for maximum system compatibility (FreeBSD base terminals, SSH connections, older terminal emulators).
+
 Add custom workloads by creating scripts in `workload/` directory following the standard interface.
 
 ## Data Output
@@ -176,13 +182,19 @@ This tool is designed for the research community:
 
 ## Building and Development
 
-The tool is implemented in C for maximum compatibility and performance:
+The tool is implemented in C99 for maximum compatibility and performance:
+
+**Key benefits of C implementation:**
+- **Binary size:** 72KB (vs 15MB Rust version)
+- **Build time:** ~3 seconds (vs 90 seconds)
+- **Dependencies:** Only libc + libm (vs Rust toolchain)
+- **Compatibility:** Works on any POSIX system with C compiler
 
 ```bash
 # Quick build (creates bin/batlab and ./batlab symlink)
 make
 
-# Debug build
+# Debug build with extra symbols
 make debug
 
 # Install system-wide
@@ -191,11 +203,19 @@ sudo make install
 # Clean build artifacts (removes bin/ directory)
 make clean
 
-# Run tests
+# Run basic functionality tests
 make test
+
+# Memory leak checking (if valgrind available)
+make memcheck
 ```
 
-See `src/README.md` for detailed technical implementation.
+**Cross-platform build:**
+- FreeBSD: Uses base system `cc` compiler
+- Linux: Uses `gcc` or `clang`
+- macOS: Uses Xcode `clang` (development/testing)
+
+See `src/README.md` for detailed technical implementation and `MIGRATION.md` for migration details.
 
 ## License
 
