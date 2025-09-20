@@ -1,13 +1,3 @@
-# Generated data files
-/data/*.jsonl
-/data/*.json
-/data/*.meta.json
-
-# Generated reports and graphs
-/docs/*.html
-/docs/*.png
-/docs/reports/
-
 # Temporary files
 *~
 *.bak
@@ -30,3 +20,11 @@ Thumbs.db
 # Package files
 *.tar.gz
 *.zip
+
+# Build artifacts
+*.o
+*.so
+*.dylib
+*.exe
+batlab
+bin/batlab
