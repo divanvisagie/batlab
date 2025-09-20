@@ -30,9 +30,3 @@ Thumbs.db
 # Package files
 *.tar.gz
 *.zip
-
-# Convenience symlink
-/batlab
-
-# Development environment
-.envrc
