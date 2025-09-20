@@ -109,7 +109,7 @@ int main(int argc, char *argv[]) {
     }
     else if (strcmp(command, "run") == 0) {
         if (argc < 3) {
-            fprintf(stderr, "❌ Usage: batlab run <workload> [args...]\n");
+            fprintf(stderr, "[ERROR] Usage: batlab run <workload> [args...]\n");
             return 1;
         }
         return cmd_run(argv[2], &argv[3], workload_dir);
@@ -167,7 +167,7 @@ int main(int argc, char *argv[]) {
         return cmd_show_config();
     }
     else {
-        fprintf(stderr, "❌ Unknown command: %s\n", command);
+        fprintf(stderr, "[ERROR] Unknown command: %s\n", command);
         print_usage();
         return 1;
     }
@@ -199,7 +199,7 @@ void print_usage(void) {
 }
 
 int cmd_init(const char *project_dir) {
-    printf("🔋 Initializing batlab battery test harness...\n");
+    printf("[INIT] Initializing batlab battery test harness...\n");
     
     // Create directories
     char data_dir[MAX_PATH_LENGTH];
@@ -220,24 +220,24 @@ int cmd_init(const char *project_dir) {
     }
     
     // Detect OS and capabilities
-    printf("🔍 Detecting system capabilities...\n");
+    printf("[INIT] Detecting system capabilities...\n");
     
     char hostname[256], os[256], kernel[256], cpu[256], machine[256];
     if (get_system_info(hostname, os, kernel, cpu, machine) == 0) {
-        printf("💻 Detected: %s system\n", os);
+        printf("[INIT] Detected: %s system\n", os);
     }
     
     // Check battery access
     double dummy_pct, dummy_watts;
     char dummy_source[32];
     if (get_battery_info(&dummy_pct, &dummy_watts, dummy_source) == 0) {
-        printf("✅ Battery telemetry available via %s\n", dummy_source);
+        printf("[INIT] Battery telemetry available via %s\n", dummy_source);
     } else {
-        printf("⚠️  Battery telemetry not available - check system setup\n");
+        printf("[WARN] Battery telemetry not available - check system setup\n");
     }
     
-    printf("✅ Initialization complete!\n");
-    printf("📋 Next steps:\n");
+    printf("[INIT] Initialization complete!\n");
+    printf("[INIT] Next steps:\n");
     printf("   1. Manually configure your system power management\n");
     printf("   2. Run: batlab log (auto-detects config) or batlab log <config-name> (in terminal 1)\n");
     printf("   3. Run: batlab run <workload> (in terminal 2)\n");
@@ -254,16 +254,16 @@ int cmd_log(const char *config_name, double hz, const char *output_file, const c
         actual_config[sizeof(actual_config) - 1] = '\0';
     } else {
         if (generate_auto_config_name(actual_config, sizeof(actual_config)) != 0) {
-            fprintf(stderr, "❌ Failed to auto-generate config name\n");
-            fprintf(stderr, "💡 Please provide a config name manually: batlab log <config-name>\n");
+            fprintf(stderr, "[ERROR] Failed to auto-generate config name\n");
+            fprintf(stderr, "[HINT] Please provide a config name manually: batlab log <config-name>\n");
             return 1;
         }
-        printf("🤖 Auto-generated config name: %s\n", actual_config);
+        printf("[LOG] Auto-generated config name: %s\n", actual_config);
     }
     
     // Validate frequency
     if (hz < 0.01 || hz > 10.0) {
-        fprintf(stderr, "❌ Sampling frequency must be between 0.01 and 10.0 Hz\n");
+        fprintf(stderr, "[ERROR] Sampling frequency must be between 0.01 and 10.0 Hz\n");
         return 1;
     }
     
@@ -291,12 +291,12 @@ int cmd_log(const char *config_name, double hz, const char *output_file, const c
         snprintf(meta_file, sizeof(meta_file), "%s/%s.meta.json", data_dir, run_id);
     }
     
-    printf("🔋 Starting telemetry logging...\n");
-    printf("⚙️  Configuration: %s\n", actual_config);
-    printf("📊 Run ID: %s\n", run_id);
-    printf("📁 Output: %s\n", jsonl_file);
-    printf("🔄 Sampling at %.1f Hz\n", hz);
-    printf("⏹️  Press Ctrl+C to stop logging\n");
+    printf("[LOG] Starting telemetry logging...\n");
+    printf("[LOG] Configuration: %s\n", actual_config);
+    printf("[LOG] Run ID: %s\n", run_id);
+    printf("[LOG] Output: %s\n", jsonl_file);
+    printf("[LOG] Sampling at %.1f Hz\n", hz);
+    printf("[LOG] Press Ctrl+C to stop logging\n");
     
     // Create metadata file
     char hostname[256], os[256], kernel[256], cpu[256], machine[256];
@@ -332,7 +332,7 @@ int cmd_log(const char *config_name, double hz, const char *output_file, const c
     int sample_count = 0;
     int error_count = 0;
     
-    printf("🚀 Logging started - run workload in another terminal\n");
+    printf("[LOG] Logging started - run workload in another terminal\n");
     
     // Prevent system suspension
     prevent_system_suspension();
@@ -355,11 +355,11 @@ int cmd_log(const char *config_name, double hz, const char *output_file, const c
             }
         } else {
             error_count++;
-            fprintf(stderr, "⚠️  Warning: Telemetry collection failed\n");
+            fprintf(stderr, "[WARN] Warning: Telemetry collection failed\n");
             
             // Exit if too many errors during startup
             if (error_count > 10 && sample_count == 0) {
-                fprintf(stderr, "❌ Too many failures during startup, exiting\n");
+                fprintf(stderr, "[ERROR] Too many failures during startup, exiting\n");
                 break;
             }
         }
@@ -375,10 +375,10 @@ int cmd_log(const char *config_name, double hz, const char *output_file, const c
     
     restore_system_suspension();
     
-    printf("\n📊 Telemetry logging stopped\n");
-    printf("📈 Samples collected: %d\n", sample_count);
+    printf("\n[LOG] Telemetry logging stopped\n");
+    printf("[LOG] Samples collected: %d\n", sample_count);
     if (error_count > 0) {
-        printf("⚠️  Errors encountered: %d\n", error_count);
+        printf("[WARN] Errors encountered: %d\n", error_count);
     }
     
     return 0;
@@ -389,13 +389,13 @@ int cmd_run(const char *workload, char *args[] __attribute__((unused)), const ch
     snprintf(workload_file, sizeof(workload_file), "%s/%s.sh", workload_dir, workload);
     
     if (!file_exists(workload_file)) {
-        fprintf(stderr, "❌ Workload not found: %s\n", workload_file);
-        fprintf(stderr, "📋 Available workloads:\n");
+        fprintf(stderr, "[ERROR] Workload not found: %s\n", workload_file);
+        fprintf(stderr, "[INFO] Available workloads:\n");
         cmd_list("workloads", workload_dir);
         return 1;
     }
     
-    printf("🏃 Running workload: %s\n", workload);
+    printf("[RUN] Running workload: %s\n", workload);
     
     // Prevent system suspension during workload
     prevent_system_suspension();
@@ -415,10 +415,10 @@ int cmd_run(const char *workload, char *args[] __attribute__((unused)), const ch
         restore_system_suspension();
         
         if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
-            printf("✅ Workload completed successfully\n");
+            printf("[RUN] Workload completed successfully\n");
             return 0;
         } else {
-            fprintf(stderr, "❌ Workload failed with exit code: %d\n", WEXITSTATUS(status));
+            fprintf(stderr, "[ERROR] Workload failed with exit code: %d\n", WEXITSTATUS(status));
             return 1;
         }
     } else {
@@ -446,7 +446,7 @@ int cmd_sample(void) {
         printf("}\n");
         return 0;
     } else {
-        fprintf(stderr, "❌ Telemetry collection failed\n");
+        fprintf(stderr, "[ERROR] Telemetry collection failed\n");
         return 1;
     }
 }
@@ -463,44 +463,44 @@ int cmd_metadata(void) {
         printf("}\n");
         return 0;
     } else {
-        fprintf(stderr, "❌ Failed to get system information\n");
+        fprintf(stderr, "[ERROR] Failed to get system information\n");
         return 1;
     }
 }
 
 int cmd_show_config(void) {
-    printf("🔍 Detecting system configuration...\n");
+    printf("[INFO] Detecting system configuration...\n");
     
     char hostname[256], os[256], kernel[256], cpu[256], machine[256];
     if (get_system_info(hostname, os, kernel, cpu, machine) == 0) {
-        printf("💻 Operating System: %s\n", os);
-        printf("🏠 Hostname: %s\n", hostname);
-        printf("⚙️  CPU: %s\n", cpu);
-        printf("🖥️  Machine: %s\n", machine);
+        printf("[INFO] Operating System: %s\n", os);
+        printf("[INFO] Hostname: %s\n", hostname);
+        printf("[INFO] CPU: %s\n", cpu);
+        printf("[INFO] Machine: %s\n", machine);
     }
     
     char config_name[256];
     if (generate_auto_config_name(config_name, sizeof(config_name)) == 0) {
-        printf("\n🤖 Auto-generated config name: %s\n", config_name);
-        printf("💡 This name is based on your OS and hardware configuration\n");
-        printf("📋 Use this with: batlab log %s\n", config_name);
-        printf("🔄 Or just run: batlab log (auto-detects)\n");
+        printf("\n[INFO] Auto-generated config name: %s\n", config_name);
+        printf("[INFO] This name is based on your OS and hardware configuration\n");
+        printf("[INFO] Use this with: batlab log %s\n", config_name);
+        printf("[INFO] Or just run: batlab log (auto-detects)\n");
         return 0;
     } else {
-        fprintf(stderr, "❌ Failed to generate config name\n");
-        fprintf(stderr, "💡 You may need to provide a config name manually\n");
+        fprintf(stderr, "[ERROR] Failed to generate config name\n");
+        fprintf(stderr, "[HINT] You may need to provide a config name manually\n");
         return 1;
     }
 }
 
 int cmd_list(const char *item, const char *workload_dir) {
     if (strcmp(item, "workloads") == 0) {
-        printf("📋 Available workloads:\n");
+        printf("[INFO] Available workloads:\n");
         
         DIR *dir = opendir(workload_dir);
         if (!dir) {
-            printf("⚠️  No workloads directory found\n");
-            printf("💡 Run 'batlab init' to create example workloads\n");
+            printf("[WARN] No workloads directory found\n");
+            printf("[HINT] Run 'batlab init' to create example workloads\n");
             return 0;
         }
         
@@ -514,7 +514,7 @@ int cmd_list(const char *item, const char *workload_dir) {
                 char workload_path[MAX_PATH_LENGTH];
                 snprintf(workload_path, sizeof(workload_path), "%s/%s", workload_dir, entry->d_name);
                 
-                printf("  📄 %-20s ", name);
+                printf("  [WL] %-20s ", name);
                 
                 // Try to get description from workload file
                 FILE *fp = fopen(workload_path, "r");
@@ -542,7 +542,7 @@ int cmd_list(const char *item, const char *workload_dir) {
         closedir(dir);
         return 0;
     } else {
-        fprintf(stderr, "❌ Usage: batlab list workloads\n");
+        fprintf(stderr, "[ERROR] Usage: batlab list workloads\n");
         return 1;
     }
 }
@@ -553,13 +553,13 @@ int cmd_report(const char *data_dir, const char *group_by __attribute__((unused)
     int count = 0;
     
     if (load_run_summaries(data_dir, min_samples, &summaries, &count) != 0) {
-        fprintf(stderr, "❌ Failed to load run summaries\n");
+        fprintf(stderr, "[ERROR] Failed to load run summaries\n");
         return 1;
     }
     
     if (count == 0) {
-        fprintf(stderr, "❌ No valid runs found in %s\n", data_dir);
-        fprintf(stderr, "💡 Make sure you have collected some telemetry data first:\n");
+        fprintf(stderr, "[ERROR] No valid runs found in %s\n", data_dir);
+        fprintf(stderr, "[HINT] Make sure you have collected some telemetry data first:\n");
         fprintf(stderr, "   batlab log <config-name>\n");
         return 0;
     }

@@ -578,11 +578,11 @@ int wait_for_battery_ready(void) {
     int result = get_battery_info(&percentage, &watts, source);
     
     if (result == 0) {
-        printf("✅ Battery detected and ready for measurements\n");
+        printf("[INFO] Battery detected and ready for measurements\n");
         return 0;
     } else {
         // For unsupported platforms or development, just continue with dummy values
-        printf("✅ Battery detected and ready for measurements\n");
+        printf("[INFO] Battery detected and ready for measurements\n");
         return 0;
     }
 }
@@ -592,19 +592,19 @@ int prevent_system_suspension(void) {
     // Try systemd-inhibit first
     if (system("which systemd-inhibit >/dev/null 2>&1") == 0) {
         system("systemd-inhibit --what=sleep:idle --who=batlab --why='Battery testing in progress' --mode=block sleep 999999 &");
-        printf("🔒 System suspension prevented (systemd-inhibit)\n");
+        printf("[INFO] System suspension prevented (systemd-inhibit)\n");
         return 0;
     }
     
     // Try caffeine fallback
     if (system("which caffeine >/dev/null 2>&1") == 0) {
         system("caffeine &");
-        printf("🔒 System suspension prevented (caffeine)\n");
+        printf("[INFO] System suspension prevented (caffeine)\n");
         return 0;
     }
 #endif
     
-    printf("⚠️  Could not prevent system suspension - install systemd or caffeine\n");
+    printf("[WARN] Could not prevent system suspension - install systemd or caffeine\n");
     return -1;
 }
 
@@ -612,7 +612,7 @@ void restore_system_suspension(void) {
 #ifdef __linux__
     system("pkill -f 'systemd-inhibit.*batlab' 2>/dev/null");
     system("pkill caffeine 2>/dev/null");
-    printf("🔓 System suspension re-enabled\n");
+    printf("[INFO] System suspension re-enabled\n");
 #endif
 }
 
@@ -666,7 +666,7 @@ void create_directory(const char *path) {
     struct stat st = {0};
     if (stat(path, &st) == -1) {
         if (mkdir(path, 0755) == 0) {
-            printf("📁 Created directory: %s\n", path);
+        printf("[INFO] Created directory: %s\n", path);
         }
     }
 }
@@ -715,7 +715,7 @@ int create_example_workloads(const char *workload_dir) {
             fprintf(fp, "sleep \"$duration\"\n");
             fclose(fp);
             chmod(idle_path, 0755);
-            printf("📄 Created workload: idle.sh\n");
+            printf("[INFO] Created workload: idle.sh\n");
         }
     }
     
@@ -760,7 +760,7 @@ int create_example_workloads(const char *workload_dir) {
             fprintf(fp, "wait\n");
             fclose(fp);
             chmod(stress_path, 0755);
-            printf("📄 Created workload: stress.sh\n");
+            printf("[INFO] Created workload: stress.sh\n");
         }
     }
     

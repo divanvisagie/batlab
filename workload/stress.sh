@@ -42,14 +42,14 @@ if [ "$intensity" -lt 1 ] || [ "$intensity" -gt 100 ]; then
     exit 1
 fi
 
-echo "🔥 Running CPU stress at ${intensity}% intensity for $duration seconds ($(($duration / 60)) minutes)..."
-echo "⏹️  Press Ctrl+C to stop"
+echo "Running CPU stress at ${intensity}% intensity for $duration seconds ($(($duration / 60)) minutes)..."
+echo "Press Ctrl+C to stop"
 
 # Prevent system suspension during stress test
 prevent_suspension() {
     # Try systemd-inhibit first (most common on Linux)
     if command -v systemd-inhibit >/dev/null 2>&1; then
-        echo "🔒 Preventing suspension with systemd-inhibit"
+        echo "Preventing suspension with systemd-inhibit"
         systemd-inhibit --what=sleep:idle --who=batlab-stress --why="Battery stress test in progress" sleep "$duration" &
         inhibit_pid=$!
         return 0
@@ -57,7 +57,7 @@ prevent_suspension() {
 
     # Try caffeine as fallback
     if command -v caffeine >/dev/null 2>&1; then
-        echo "🔒 Preventing suspension with caffeine"
+        echo "Preventing suspension with caffeine"
         caffeine &
         caffeine_pid=$!
         return 0
@@ -65,19 +65,19 @@ prevent_suspension() {
 
     # Try pmset on macOS
     if command -v pmset >/dev/null 2>&1; then
-        echo "🔒 Preventing suspension with pmset"
+        echo "Preventing suspension with pmset"
         caffeinate -i &
         caffeinate_pid=$!
         return 0
     fi
 
-    echo "⚠️  No suspension prevention tool found - system may suspend during test"
+    echo "WARNING: No suspension prevention tool found - system may suspend during test"
     return 1
 }
 
 # Cleanup function
 cleanup() {
-    echo "🔓 Re-enabling system suspension"
+    echo "Re-enabling system suspension"
     [ -n "$inhibit_pid" ] && kill "$inhibit_pid" 2>/dev/null
     [ -n "$caffeine_pid" ] && kill "$caffeine_pid" 2>/dev/null
     [ -n "$caffeinate_pid" ] && kill "$caffeinate_pid" 2>/dev/null
@@ -95,14 +95,14 @@ prevent_suspension
 
 # Get number of CPU cores
 ncpu=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo "1")
-echo "📊 Using $ncpu CPU cores"
+echo "Using $ncpu CPU cores"
 
 # Calculate work and sleep ratios based on intensity
 # For 50% intensity: work 0.5s, sleep 0.5s per second
 work_time=$(echo "scale=3; $intensity / 100" | bc 2>/dev/null || awk "BEGIN {print $intensity/100}")
 sleep_time=$(echo "scale=3; 1 - $work_time" | bc 2>/dev/null || awk "BEGIN {print 1 - $work_time}")
 
-echo "📈 Work ratio: ${work_time}s work, ${sleep_time}s sleep per second"
+echo "Work ratio: ${work_time}s work, ${sleep_time}s sleep per second"
 
 # Start CPU stress workers
 i=0
@@ -128,4 +128,4 @@ wait
 # Clean up
 cleanup
 
-echo "✅ CPU stress workload completed"
+echo "CPU stress workload completed"

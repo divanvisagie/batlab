@@ -28,14 +28,14 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-echo "🛌 Running idle workload for $duration seconds ($(($duration / 60)) minutes)..."
-echo "⏹️  Press Ctrl+C to stop"
+echo "Running idle workload for $duration seconds ($(($duration / 60)) minutes)..."
+echo "Press Ctrl+C to stop"
 
 # Prevent system suspension during idle test
 prevent_suspension() {
     # Try systemd-inhibit first (most common on Linux)
     if command -v systemd-inhibit >/dev/null 2>&1; then
-        echo "🔒 Preventing suspension with systemd-inhibit"
+        echo "Preventing suspension with systemd-inhibit"
         systemd-inhibit --what=sleep:idle --who=batlab-idle --why="Battery idle test in progress" sleep "$duration" &
         inhibit_pid=$!
         return 0
@@ -43,7 +43,7 @@ prevent_suspension() {
 
     # Try caffeine as fallback
     if command -v caffeine >/dev/null 2>&1; then
-        echo "🔒 Preventing suspension with caffeine"
+        echo "Preventing suspension with caffeine"
         caffeine &
         caffeine_pid=$!
         return 0
@@ -51,19 +51,19 @@ prevent_suspension() {
 
     # Try pmset on macOS
     if command -v pmset >/dev/null 2>&1; then
-        echo "🔒 Preventing suspension with pmset"
+        echo "Preventing suspension with pmset"
         caffeinate -i &
         caffeinate_pid=$!
         return 0
     fi
 
-    echo "⚠️  No suspension prevention tool found - system may suspend during test"
+    echo "WARNING: No suspension prevention tool found - system may suspend during test"
     return 1
 }
 
 # Cleanup function
 cleanup() {
-    echo "🔓 Re-enabling system suspension"
+    echo "Re-enabling system suspension"
     [ -n "$inhibit_pid" ] && kill "$inhibit_pid" 2>/dev/null
     [ -n "$caffeine_pid" ] && kill "$caffeine_pid" 2>/dev/null
     [ -n "$caffeinate_pid" ] && kill "$caffeinate_pid" 2>/dev/null
@@ -83,4 +83,4 @@ sleep "$duration"
 # Clean up
 cleanup
 
-echo "✅ Idle workload completed"
+echo "Idle workload completed"
