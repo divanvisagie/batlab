@@ -1,0 +1,3 @@
+# This file ensures the data/ directory is preserved in git
+# Battery test data files (*.jsonl, *.meta.json) will be created here
+# during batlab usage but should not be committed to the repository

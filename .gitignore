@@ -1,14 +1,12 @@
-# C build artifacts
-bin/
-*.so
-*.a
-*.dylib
-batlab
+# Generated data files
+/data/*.jsonl
+/data/*.json
+/data/*.meta.json
 
-# Debug files
-*.dSYM/
-core
-*.core
+# Generated reports and graphs
+/docs/*.html
+/docs/*.png
+/docs/reports/
 
 # Temporary files
 *~
@@ -20,16 +18,10 @@ core
 # IDE files
 .vscode/
 .idea/
-*.xcodeproj/
-*.xcworkspace/
 
 # OS files
 .DS_Store
 Thumbs.db
-
-# Test data
-/data/test-*
-
 
 # Runtime files
 *.pid
@@ -38,3 +30,9 @@ Thumbs.db
 # Package files
 *.tar.gz
 *.zip
+
+# Convenience symlink
+/batlab
+
+# Development environment
+.envrc

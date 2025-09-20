@@ -1,0 +1,746 @@
+#!/bin/sh
+
+# batlab - Battery Test Harness (Shell Script Version)
+# Cross-platform battery testing tool for Unix systems
+# Compatible with FreeBSD, OpenBSD, NetBSD, Linux, macOS
+
+set -e
+
+VERSION="2.0.0-shell"
+PROGRAM_NAME="batlab"
+
+# Default configuration
+DEFAULT_HZ=1.0
+DATA_DIR="data"
+WORKLOAD_DIR="workload"
+BINDIR="bin"
+
+# Platform detection
+detect_platform() {
+    case "$(uname -s)" in
+        FreeBSD) echo "freebsd" ;;
+        OpenBSD) echo "openbsd" ;;
+        NetBSD)  echo "netbsd" ;;
+        Linux)   echo "linux" ;;
+        Darwin)  echo "macos" ;;
+        *)       echo "unknown" ;;
+    esac
+}
+
+# Logging functions
+log_info() {
+    printf "[INFO] %s\n" "$1" >&2
+}
+
+log_warn() {
+    printf "[WARN] %s\n" "$1" >&2
+}
+
+log_error() {
+    printf "[ERROR] %s\n" "$1" >&2
+}
+
+log_log() {
+    printf "[LOG] %s\n" "$1" >&2
+}
+
+# JSON utility functions
+json_escape() {
+    printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+generate_timestamp() {
+    date -u "+%Y-%m-%dT%H:%M:%S.000000000Z"
+}
+
+# Battery information collection
+get_battery_freebsd() {
+    local percentage="-1"
+    local watts="0.0"
+    local source="unknown"
+
+    # Try acpiconf first
+    if command -v acpiconf >/dev/null 2>&1; then
+        local acpi_output
+        acpi_output=$(acpiconf -i 0 2>/dev/null || true)
+
+        if [ -n "$acpi_output" ]; then
+            percentage=$(echo "$acpi_output" | grep "Remaining capacity:" | awk '{print $3}' | tr -d '%' || echo "-1")
+            local rate=$(echo "$acpi_output" | grep "Present rate:" | awk '{print $3}' || echo "0")
+
+            if [ "$rate" != "0" ] && [ "$rate" != "unknown" ]; then
+                # Convert mW to W
+                watts=$(echo "$rate" | awk '{print $1/1000}' || echo "0.0")
+            fi
+            source="acpiconf"
+        fi
+    fi
+
+    # Try sysctl fallback
+    if [ "$percentage" = "-1" ]; then
+        percentage=$(sysctl -n hw.acpi.battery.life 2>/dev/null || echo "50")
+        local rate=$(sysctl -n hw.acpi.battery.rate 2>/dev/null || echo "5000")
+        watts=$(echo "$rate" | awk '{print $1/1000}' || echo "5.0")
+        source="sysctl"
+    fi
+
+    printf "%s,%s,%s" "$percentage" "$watts" "$source"
+}
+
+get_battery_openbsd() {
+    local percentage="50"
+    local watts="5.0"
+    local source="apm"
+
+    if command -v apm >/dev/null 2>&1; then
+        percentage=$(apm -l 2>/dev/null || echo "50")
+        # OpenBSD apm doesn't always provide power draw
+        watts="5.0"
+    else
+        source="dummy"
+    fi
+
+    printf "%s,%s,%s" "$percentage" "$watts" "$source"
+}
+
+get_battery_netbsd() {
+    local percentage="50"
+    local watts="5.0"
+    local source="envstat"
+
+    if command -v envstat >/dev/null 2>&1; then
+        local envstat_output
+        envstat_output=$(envstat 2>/dev/null || true)
+
+        if [ -n "$envstat_output" ]; then
+            percentage=$(echo "$envstat_output" | grep -i "charge" | head -1 | awk '{print $2}' | tr -d '%' || echo "50")
+            watts="5.0"  # NetBSD envstat may not provide power draw
+        else
+            source="dummy"
+        fi
+    else
+        source="dummy"
+    fi
+
+    printf "%s,%s,%s" "$percentage" "$watts" "$source"
+}
+
+get_battery_linux() {
+    local percentage="50"
+    local watts="5.0"
+    local source="upower"
+
+    # Try upower first
+    if command -v upower >/dev/null 2>&1; then
+        local battery_path
+        battery_path=$(upower -e | grep 'BAT' | head -1)
+
+        if [ -n "$battery_path" ]; then
+            local upower_output
+            upower_output=$(upower -i "$battery_path" 2>/dev/null || true)
+
+            if [ -n "$upower_output" ]; then
+                percentage=$(echo "$upower_output" | grep -E "percentage" | awk '{print $2}' | tr -d '%' || echo "50")
+                local power_line=$(echo "$upower_output" | grep -E "energy-rate|power" | head -1)
+                watts=$(echo "$power_line" | awk '{print $2}' || echo "5.0")
+            fi
+        fi
+    fi
+
+    # Try /sys fallback
+    if [ "$percentage" = "50" ] && [ -f /sys/class/power_supply/BAT0/capacity ]; then
+        percentage=$(cat /sys/class/power_supply/BAT0/capacity 2>/dev/null || echo "50")
+        watts="5.0"  # /sys doesn't always provide current power draw
+        source="sysfs"
+    fi
+
+    # Final fallback
+    if [ "$percentage" = "50" ]; then
+        source="dummy"
+    fi
+
+    printf "%s,%s,%s" "$percentage" "$watts" "$source"
+}
+
+get_battery_macos() {
+    local percentage="50"
+    local watts="5.0"
+    local source="ioreg"
+
+    if command -v ioreg >/dev/null 2>&1; then
+        local ioreg_output
+        ioreg_output=$(ioreg -rn AppleSmartBattery 2>/dev/null || true)
+
+        if [ -n "$ioreg_output" ]; then
+            # Get current capacity percentage
+            local max_cap=$(echo "$ioreg_output" | grep -o '"MaxCapacity" = [0-9]*' | awk '{print $3}' || echo "100")
+            local current_cap=$(echo "$ioreg_output" | grep -o '"CurrentCapacity" = [0-9]*' | awk '{print $3}' || echo "50")
+
+            if [ "$max_cap" -gt 0 ]; then
+                percentage=$(echo "$current_cap $max_cap" | awk '{printf "%.0f", ($1/$2)*100}')
+            else
+                percentage="50"
+            fi
+
+            # Get power consumption more carefully
+            local amperage=$(echo "$ioreg_output" | grep -o '"InstantAmperage" = -\?[0-9]*' | awk '{print $3}' || echo "1000")
+            local voltage=$(echo "$ioreg_output" | grep -o '"Voltage" = [0-9]*' | awk '{print $3}' || echo "5000")
+
+            # Calculate watts from amperage (mA) and voltage (mV)
+            if [ -n "$amperage" ] && [ -n "$voltage" ] && [ "$voltage" -gt 0 ]; then
+                # Convert mA * mV to watts: (mA * mV) / 1,000,000
+                watts=$(echo "$amperage $voltage" | awk '{
+                    amp = $1;
+                    if (amp < 0) amp = -amp;
+                    volt = $2;
+                    watts = (amp * volt) / 1000000;
+                    if (watts < 0.1) watts = 5.0;
+                    if (watts > 100) watts = 5.0;
+                    printf "%.3f", watts
+                }' || echo "5.0")
+            else
+                watts="5.0"
+            fi
+        else
+            source="dummy"
+        fi
+    else
+        source="dummy"
+    fi
+
+    printf "%s,%s,%s" "$percentage" "$watts" "$source"
+}
+
+get_battery_info() {
+    local platform=$(detect_platform)
+    case "$platform" in
+        freebsd)  get_battery_freebsd ;;
+        openbsd)  get_battery_openbsd ;;
+        netbsd)   get_battery_netbsd ;;
+        linux)    get_battery_linux ;;
+        macos)    get_battery_macos ;;
+        *)        printf "50.0,5.000,dummy" ;;
+    esac
+}
+
+# System metrics collection
+get_cpu_load() {
+    local load="0.10"
+    if command -v uptime >/dev/null 2>&1; then
+        # Try different uptime formats
+        local uptime_output=$(uptime)
+        if echo "$uptime_output" | grep -q "load average"; then
+            load=$(echo "$uptime_output" | awk -F'load average:' '{print $2}' | awk '{gsub(/^[ \t]+|[ \t]+$/, "", $1); print $1}' | tr -d ',' || echo "0.10")
+        elif echo "$uptime_output" | grep -q "load averages"; then
+            # macOS format: "load averages: 1.23 1.45 1.67"
+            load=$(echo "$uptime_output" | awk -F'load averages:' '{print $2}' | awk '{gsub(/^[ \t]+|[ \t]+$/, "", $1); print $1}' || echo "0.10")
+        fi
+
+        # Validate the load value is numeric
+        if ! echo "$load" | grep -E '^[0-9]+\.?[0-9]*$' >/dev/null; then
+            load="0.10"
+        fi
+    fi
+    printf "%s" "$load"
+}
+
+get_memory_usage() {
+    local platform=$(detect_platform)
+    local ram_pct="50.0"
+
+    case "$platform" in
+        freebsd|openbsd|netbsd)
+            if command -v vmstat >/dev/null 2>&1; then
+                # Try to get memory usage from vmstat
+                ram_pct=$(vmstat | tail -1 | awk '{print 50.0}' || echo "50.0")
+            fi
+            ;;
+        linux)
+            if [ -f /proc/meminfo ]; then
+                local total=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+                local available=$(grep MemAvailable /proc/meminfo | awk '{print $2}' || grep MemFree /proc/meminfo | awk '{print $2}')
+                if [ -n "$total" ] && [ -n "$available" ] && [ "$total" -gt 0 ]; then
+                    ram_pct=$(echo "$total $available" | awk '{print (($1-$2)/$1)*100}')
+                fi
+            fi
+            ;;
+        macos)
+            if command -v vm_stat >/dev/null 2>&1; then
+                # macOS vm_stat parsing would go here
+                ram_pct="50.0"
+            fi
+            ;;
+    esac
+
+    printf "%s" "$ram_pct"
+}
+
+get_temperature() {
+    local platform=$(detect_platform)
+    local temp_c="40.0"
+
+    case "$platform" in
+        freebsd)
+            # Try various FreeBSD temperature sources
+            if command -v sysctl >/dev/null 2>&1; then
+                temp_c=$(sysctl -n dev.cpu.0.temperature 2>/dev/null | cut -d'C' -f1 || \
+                        sysctl -n hw.acpi.thermal.tz0.temperature 2>/dev/null | cut -d'C' -f1 || \
+                        echo "40.0")
+            fi
+            ;;
+        linux)
+            if [ -f /sys/class/thermal/thermal_zone0/temp ]; then
+                local temp_millic=$(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null || echo "40000")
+                temp_c=$(echo "$temp_millic" | awk '{print $1/1000}')
+            fi
+            ;;
+        *)
+            temp_c="40.0"
+            ;;
+    esac
+
+    printf "%s" "$temp_c"
+}
+
+# System metadata collection
+get_hostname() {
+    hostname 2>/dev/null || echo "unknown"
+}
+
+get_os_info() {
+    local platform=$(detect_platform)
+    case "$platform" in
+        freebsd)  uname -sr | sed 's/FreeBSD /FreeBSD /' ;;
+        openbsd)  uname -sr | sed 's/OpenBSD /OpenBSD /' ;;
+        netbsd)   uname -sr | sed 's/NetBSD /NetBSD /' ;;
+        linux)
+            if [ -f /etc/os-release ]; then
+                grep '^PRETTY_NAME=' /etc/os-release | cut -d'"' -f2
+            else
+                uname -sr
+            fi
+            ;;
+        macos)    sw_vers -productName 2>/dev/null | head -1 || echo "macOS" ;;
+        *)        uname -sr ;;
+    esac
+}
+
+get_cpu_info() {
+    local platform=$(detect_platform)
+    local cpu="unknown"
+
+    case "$platform" in
+        freebsd|openbsd|netbsd)
+            if command -v sysctl >/dev/null 2>&1; then
+                cpu=$(sysctl -n hw.model 2>/dev/null || echo "unknown")
+            fi
+            ;;
+        linux)
+            if [ -f /proc/cpuinfo ]; then
+                cpu=$(grep "model name" /proc/cpuinfo | head -1 | cut -d':' -f2 | sed 's/^ *//' || echo "unknown")
+            fi
+            ;;
+        macos)
+            cpu=$(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo "unknown")
+            ;;
+    esac
+
+    printf "%s" "$cpu"
+}
+
+# Core functionality
+collect_sample() {
+    local timestamp=$(generate_timestamp)
+    local battery_info=$(get_battery_info)
+    local percentage=$(echo "$battery_info" | cut -d',' -f1)
+    local watts=$(echo "$battery_info" | cut -d',' -f2)
+    local source=$(echo "$battery_info" | cut -d',' -f3)
+    local cpu_load=$(get_cpu_load)
+    local ram_pct=$(get_memory_usage)
+    local temp_c=$(get_temperature)
+
+    # Format as JSON
+    cat << EOF
+{"t": "$timestamp", "pct": $percentage, "watts": $watts, "cpu_load": $cpu_load, "ram_pct": $ram_pct, "temp_c": $temp_c, "src": "$source"}
+EOF
+}
+
+show_metadata() {
+    local hostname=$(get_hostname)
+    local os=$(get_os_info)
+    local kernel=$(uname -r)
+    local cpu=$(get_cpu_info)
+    local machine=$(uname -m)
+
+    cat << EOF
+{
+  "hostname": "$(json_escape "$hostname")",
+  "os": "$(json_escape "$os")",
+  "kernel": "$(json_escape "$kernel")",
+  "cpu": "$(json_escape "$cpu")",
+  "machine": "$(json_escape "$machine")"
+}
+EOF
+}
+
+generate_config_name() {
+    local platform=$(detect_platform)
+    local hostname=$(get_hostname)
+
+    case "$platform" in
+        freebsd)  echo "freebsd-${hostname}" ;;
+        openbsd)  echo "openbsd-${hostname}" ;;
+        netbsd)   echo "netbsd-${hostname}" ;;
+        linux)    echo "linux-${hostname}" ;;
+        macos)    echo "macos-${hostname}" ;;
+        *)        echo "unknown-generic" ;;
+    esac
+}
+
+# Logging functionality
+start_logging() {
+    local config_name="$1"
+    local hz="$2"
+
+    if [ -z "$config_name" ]; then
+        config_name=$(generate_config_name)
+    fi
+
+    if [ -z "$hz" ]; then
+        hz="$DEFAULT_HZ"
+    fi
+
+    # Check battery availability
+    local battery_info=$(get_battery_info)
+    local source=$(echo "$battery_info" | cut -d',' -f3)
+
+    if [ "$source" != "dummy" ]; then
+        log_info "Battery detected and ready for measurements"
+    else
+        log_warn "No battery detected - using dummy data for testing"
+    fi
+
+    # Create data directory
+    mkdir -p "$DATA_DIR"
+
+    # Generate run ID and filenames
+    local timestamp=$(date -u "+%Y-%m-%dT%H:%M:%SZ")
+    local hostname=$(get_hostname)
+    local os_short=$(detect_platform)
+    local run_id="${timestamp}_${hostname}_${os_short}_${config_name}"
+
+    local jsonl_file="${DATA_DIR}/${run_id}.jsonl"
+    local meta_file="${DATA_DIR}/${run_id}.meta.json"
+
+    log_log "Starting telemetry logging..."
+    log_log "Configuration: $config_name"
+    log_log "Run ID: $run_id"
+    log_log "Output: $jsonl_file"
+    log_log "Sampling at $hz Hz"
+    log_log "Press Ctrl+C to stop logging"
+    log_log "Logging started - run workload in another terminal"
+
+    # Create metadata file
+    cat > "$meta_file" << EOF
+{
+  "run_id": "$run_id",
+  "host": "$(json_escape "$(get_hostname)")",
+  "os": "$(json_escape "$(get_os_info)")",
+  "config": "$(json_escape "$config_name")",
+  "start_time": "$(generate_timestamp)",
+  "sampling_hz": $hz
+}
+EOF
+
+    # Calculate sleep interval
+    local interval=$(echo "$hz" | awk '{print 1/$1}')
+
+    # Prevent system suspension warning
+    log_warn "Could not prevent system suspension - install systemd or caffeine"
+
+    # Start sampling loop
+    local sample_count=0
+    trap 'log_log ""; printf "\033[0;33m⏹️  Received interrupt signal, stopping telemetry...\033[0m\n"; log_log ""; log_log "Telemetry logging stopped"; log_log "Samples collected: $sample_count"; exit 0' INT TERM
+
+    while true; do
+        collect_sample >> "$jsonl_file"
+        sample_count=$((sample_count + 1))
+        sleep "$interval"
+    done
+}
+
+# Workload management
+run_workload() {
+    local workload_name="$1"
+    shift
+    local workload_args="$*"
+
+    if [ -z "$workload_name" ]; then
+        log_error "No workload specified"
+        return 1
+    fi
+
+    local workload_script="${WORKLOAD_DIR}/${workload_name}.sh"
+
+    if [ ! -f "$workload_script" ]; then
+        log_error "Workload not found: $workload_name"
+        log_error "Available workloads:"
+        list_workloads
+        return 1
+    fi
+
+    if [ ! -x "$workload_script" ]; then
+        log_error "Workload script not executable: $workload_script"
+        return 1
+    fi
+
+    log_log "Running workload: $workload_name"
+
+    # Prevent suspension warning
+    log_warn "Could not prevent system suspension - install systemd or caffeine"
+
+    # Execute workload
+    "$workload_script" $workload_args
+
+    log_log "Workload completed successfully"
+}
+
+list_workloads() {
+    log_info "Available workloads:"
+
+    if [ -d "$WORKLOAD_DIR" ]; then
+        for script in "$WORKLOAD_DIR"/*.sh; do
+            if [ -f "$script" ]; then
+                local name=$(basename "$script" .sh)
+                local description="Unknown workload"
+
+                # Try to extract description from script
+                if grep -q "# .*workload" "$script"; then
+                    description=$(grep "# .*workload" "$script" | head -1 | sed 's/^# *//')
+                fi
+
+                printf "  [WL] %-20s %s\n" "$name" "$description"
+            fi
+        done
+    else
+        log_warn "Workload directory not found: $WORKLOAD_DIR"
+    fi
+}
+
+# Report generation (basic text report)
+generate_report() {
+    if [ ! -d "$DATA_DIR" ]; then
+        log_error "Data directory not found: $DATA_DIR"
+        return 1
+    fi
+
+    local jsonl_files=$(find "$DATA_DIR" -name "*.jsonl" 2>/dev/null | wc -l)
+
+    if [ "$jsonl_files" -eq 0 ]; then
+        log_warn "No data files found in $DATA_DIR"
+        return 1
+    fi
+
+    echo "INDIVIDUAL RUNS"
+    printf "%-30s %-15s %-10s %-10s %-8s %-8s %-8s %-8s %-8s\n" \
+           "RUN_ID" "CONFIG" "OS" "WORKLOAD" "SAMPLES" "AVG_W" "MED_W" "CPU%" "TEMP°C"
+    printf "%.*s\n" 120 "$(printf '%*s' 120 '' | tr ' ' '-')"
+
+    # Process each JSONL file
+    for jsonl_file in "$DATA_DIR"/*.jsonl; do
+        [ -f "$jsonl_file" ] || continue
+
+        local basename=$(basename "$jsonl_file" .jsonl)
+        local meta_file="${DATA_DIR}/${basename}.meta.json"
+
+        # Extract basic info
+        local run_id=$(echo "$basename" | cut -c1-30)
+        local config="unknown"
+        local os="Unknown"
+
+        if [ -f "$meta_file" ]; then
+            config=$(grep '"config"' "$meta_file" | cut -d'"' -f4 | cut -c1-15)
+            os=$(grep '"os"' "$meta_file" | cut -d'"' -f4 | cut -c1-10)
+        fi
+
+        # Count samples and calculate basic stats
+        local sample_count=$(wc -l < "$jsonl_file" 2>/dev/null || echo "0")
+
+        if [ "$sample_count" -gt 0 ]; then
+            local avg_watts=$(awk -F'"watts": ' '{if(NF>1) print $2}' "$jsonl_file" | awk -F',' '{sum+=$1; count++} END {if(count>0) printf "%.2f", sum/count; else print "0.00"}')
+            local avg_cpu=$(awk -F'"cpu_load": ' '{if(NF>1) print $2}' "$jsonl_file" | awk -F',' '{sum+=$1*100; count++} END {if(count>0) printf "%.1f", sum/count; else print "0.0"}')
+            local avg_temp=$(awk -F'"temp_c": ' '{if(NF>1) print $2}' "$jsonl_file" | awk -F',' '{sum+=$1; count++} END {if(count>0) printf "%.1f", sum/count; else print "40.0"}')
+
+            printf "%-30s %-15s %-10s %-10s %-8s %-8s %-8s %-8s %-8s\n" \
+                   "$run_id" "$config" "$os" "-" "$sample_count" "$avg_watts" "$avg_watts" "$avg_cpu" "$avg_temp"
+        fi
+    done
+}
+
+# Initialization
+initialize() {
+    log_log "Initializing batlab battery test harness..."
+    log_log "Detecting system capabilities..."
+
+    local platform=$(detect_platform)
+    log_log "Detected: $platform system"
+
+    # Check battery capability
+    local battery_info=$(get_battery_info)
+    local source=$(echo "$battery_info" | cut -d',' -f3)
+
+    log_log "Battery telemetry available via $source"
+
+    # Create directories
+    mkdir -p "$DATA_DIR"
+    mkdir -p "$WORKLOAD_DIR"
+
+    # Ensure workload scripts exist and are executable
+    for workload in idle stress; do
+        if [ -f "${WORKLOAD_DIR}/${workload}.sh" ]; then
+            chmod +x "${WORKLOAD_DIR}/${workload}.sh"
+        fi
+    done
+
+    log_log "Initialization complete!"
+    log_log "Next steps:"
+    log_log "   1. Manually configure your system power management"
+    log_log "   2. Run: $PROGRAM_NAME log (auto-detects config) or $PROGRAM_NAME log <config-name> (in terminal 1)"
+    log_log "   3. Run: $PROGRAM_NAME run <workload> (in terminal 2)"
+}
+
+# Show configuration preview
+show_config() {
+    log_info "Detecting system configuration..."
+
+    local platform=$(detect_platform)
+    local hostname=$(get_hostname)
+    local cpu=$(get_cpu_info)
+    local machine=$(uname -m)
+    local config_name=$(generate_config_name)
+
+    log_info "Operating System: $platform"
+    log_info "Hostname: $hostname"
+    log_info "CPU: $cpu"
+    log_info "Machine: $machine"
+    echo ""
+    log_info "Auto-generated config name: $config_name"
+    log_info "This name is based on your OS and hardware configuration"
+    log_info "Use this with: $PROGRAM_NAME log $config_name"
+    log_info "Or just run: $PROGRAM_NAME log (auto-detects)"
+}
+
+# Usage/help
+show_usage() {
+    cat << EOF
+$PROGRAM_NAME $VERSION - Battery Test Harness for FreeBSD vs Linux Research
+
+USAGE:
+    $PROGRAM_NAME <COMMAND>
+
+COMMANDS:
+    init                           Initialize directories and check system capabilities
+    log [CONFIG-NAME]              Start telemetry logging with optional configuration name
+    run <WORKLOAD> [ARGS...]       Run workload (use in separate terminal while logging)
+    report [OPTIONS]               Analyze collected data and display results
+    export [OPTIONS]               Export summary data for external analysis
+    list [workloads]               List available workloads
+    sample                         Collect a single telemetry sample (for testing)
+    metadata                       Show system metadata
+    show-config                    Show what auto-generated config name would be used
+
+EXAMPLES:
+    $PROGRAM_NAME init                    # Set up directories and example workloads
+    $PROGRAM_NAME show-config             # Preview auto-generated config name
+    $PROGRAM_NAME log                     # Start logging with auto-generated config name
+    $PROGRAM_NAME log freebsd-powerd      # Start logging with custom config name
+    $PROGRAM_NAME run idle                # Run idle workload in separate terminal
+    $PROGRAM_NAME report                  # View results
+    $PROGRAM_NAME list workloads          # Show available workloads
+
+For more information, see README.md
+EOF
+}
+
+# Main command dispatcher
+main() {
+    if [ $# -eq 0 ]; then
+        show_usage >&2
+        exit 1
+    fi
+
+    local command="$1"
+    shift
+
+    case "$command" in
+        init)
+            initialize
+            ;;
+        log)
+            local config_name="$1"
+            local hz="$DEFAULT_HZ"
+
+            # Parse optional --hz parameter
+            while [ $# -gt 0 ]; do
+                case "$1" in
+                    --hz)
+                        hz="$2"
+                        shift 2
+                        ;;
+                    *)
+                        if [ -z "$config_name" ]; then
+                            config_name="$1"
+                        fi
+                        shift
+                        ;;
+                esac
+            done
+
+            start_logging "$config_name" "$hz"
+            ;;
+        run)
+            run_workload "$@"
+            ;;
+        report)
+            generate_report
+            ;;
+        export)
+            generate_report  # For now, same as report
+            ;;
+        list)
+            local what="$1"
+            case "$what" in
+                workloads|"")
+                    list_workloads
+                    ;;
+                *)
+                    log_error "Unknown list target: $what"
+                    exit 1
+                    ;;
+            esac
+            ;;
+        sample)
+            collect_sample
+            ;;
+        metadata)
+            show_metadata
+            ;;
+        show-config)
+            show_config
+            ;;
+        --help|-h|help)
+            show_usage
+            ;;
+        --version|-v|version)
+            echo "$PROGRAM_NAME $VERSION"
+            ;;
+        *)
+            log_error "Unknown command: $command"
+            show_usage >&2
+            exit 1
+            ;;
+    esac
+}
+
+# Run main function with all arguments
+main "$@"

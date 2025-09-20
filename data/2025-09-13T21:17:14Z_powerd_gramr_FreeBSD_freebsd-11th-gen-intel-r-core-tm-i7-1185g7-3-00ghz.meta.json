@@ -1,8 +1,0 @@
-{
-  "config": "freebsd-gnome-powerd-11th-gen-intel-r-core-tm-i7-1185g7-3-00ghz",
-  "host": "gramr",
-  "os": "FreeBSD 14.3-RELEASE",
-  "run_id": "2025-09-13T21:17:14Z_gramr_FreeBSD_freebsd-11th-gen-intel-r-core-tm-i7-1185g7-3-00ghz",
-  "sampling_hz": 0.016699999570846558,
-  "start_time": "2025-09-13T21:17:14.419292575+00:00"
-}

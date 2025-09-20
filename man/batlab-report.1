@@ -1,0 +1,138 @@
+.TH BATLAB-REPORT 1 "2024" "batlab 2.0.0" "Battery Test Harness"
+.SH NAME
+batlab-report \- generate HTML reports from batlab data
+.SH SYNOPSIS
+.B batlab-report
+.RI [ OPTIONS ]
+.br
+.B batlab-report
+.B --all
+.br
+.B batlab-report
+.B --config
+.I CONFIG-NAME
+.br
+.B batlab-report
+.B --output
+.I FILE
+.SH DESCRIPTION
+.B batlab-report
+generates comprehensive HTML reports from batlab telemetry data. It creates interactive charts showing battery drain patterns, power consumption, CPU load, and temperature over time for one or more test configurations.
+
+The tool reads JSONL telemetry files and JSON metadata from the data/ directory and produces professional HTML reports suitable for research presentations and analysis.
+.SH OPTIONS
+.TP
+.B --all
+Generate reports for all available test configurations found in the data directory.
+.TP
+.BI "--config " CONFIG-NAME
+Generate report for specific configuration name.
+.TP
+.BI "--output " FILE
+Specify output HTML file. Default is to create files in docs/ directory.
+.TP
+.B --index
+Generate an index page linking all individual reports.
+.TP
+.B --verbose
+Enable verbose output showing processing details.
+.TP
+.B --help
+Display usage information and exit.
+.SH REPORT FEATURES
+Generated HTML reports include:
+.PP
+.B 4-Panel Battery Analysis
+.RS
+- Battery percentage over time
+- Power consumption (watts)
+- CPU load percentage
+- Temperature (Celsius)
+.RE
+.PP
+.B Statistical Summary
+.RS
+- Test duration
+- Battery consumed (start to end percentage)
+- Average power draw
+- Estimated total battery life
+- Peak/minimum values
+.RE
+.PP
+.B System Information
+.RS
+- Configuration name
+- Hostname and OS details
+- CPU and architecture
+- Test start time and workload
+.RE
+.PP
+.B Interactive Features
+.RS
+- Zoomable time-series charts
+- Hover tooltips with exact values
+- Responsive layout for different screen sizes
+.RE
+.SH FILES
+.TP
+.I data/*.jsonl
+Telemetry data files (input)
+.TP
+.I data/*.meta.json
+Metadata files (input)
+.TP
+.I docs/
+Output directory for HTML reports
+.TP
+.I docs/index.html
+Main index page linking all reports
+.TP
+.I templates/
+HTML templates used for report generation
+.SH EXAMPLES
+Generate reports for all configurations:
+.nf
+    batlab-report --all
+.fi
+.PP
+Generate report for specific test:
+.nf
+    batlab-report --config freebsd-powerd-aggressive
+.fi
+.PP
+Custom output file:
+.nf
+    batlab-report --config linux-default --output /tmp/battery-test.html
+.fi
+.PP
+Generate index page only:
+.nf
+    batlab-report --index
+.fi
+.SH OUTPUT FORMAT
+Reports are generated as standalone HTML files with embedded CSS and JavaScript. They can be opened in any modern web browser and do not require internet connectivity.
+
+Charts are rendered using lightweight JavaScript libraries and are compatible with all major browsers including text-mode browsers (with graceful degradation).
+.SH CHART DETAILS
+.TP
+.B Battery Panel
+Shows battery percentage decline over test duration. Includes trend line and discharge rate calculation.
+.TP
+.B Power Panel
+Displays instantaneous power consumption in watts. Helps identify power spikes and steady-state consumption.
+.TP
+.B CPU Panel
+Shows CPU load percentage. Correlates system activity with power consumption patterns.
+.TP
+.B Temperature Panel
+Displays system temperature in Celsius. Useful for thermal analysis and correlation with performance throttling.
+.SH EXIT STATUS
+.B batlab-report
+exits with status 0 on success, non-zero on error.
+.SH SEE ALSO
+.BR batlab (1),
+.BR batlab-graph (1)
+.SH AUTHOR
+Written for FreeBSD vs Linux battery life research.
+.SH REPORTING BUGS
+Report bugs to the project repository.

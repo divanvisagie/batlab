@@ -1,0 +1,186 @@
+.TH BATLAB 1 "2024" "batlab 2.0.0" "Battery Test Harness"
+.SH NAME
+batlab \- battery test harness for Unix systems
+.SH SYNOPSIS
+.B batlab
+.I COMMAND
+.RI [ OPTIONS ]
+.br
+.B batlab
+.B init
+.br
+.B batlab
+.B log
+.RI [ CONFIG-NAME ]
+.RI [ --hz
+.IR HZ ]
+.br
+.B batlab
+.B run
+.I WORKLOAD
+.RI [ ARGS... ]
+.br
+.B batlab
+.B report
+.RI [ OPTIONS ]
+.br
+.B batlab
+.B sample
+.br
+.B batlab
+.B metadata
+.br
+.B batlab
+.B show-config
+.br
+.B batlab
+.B list
+.B workloads
+.SH DESCRIPTION
+.B batlab
+is a cross-platform battery testing tool for measuring and comparing battery life between different operating system configurations on laptops. It enables systematic data collection for FreeBSD vs Linux power management research.
+
+The tool samples battery percentage, power draw, CPU load, and temperature at regular intervals while running configurable workloads. Data is stored in structured logs suitable for analysis and comparison across different system configurations.
+.SH COMMANDS
+.TP
+.B init
+Initialize directories and check system capabilities. Creates data/, workload/, and other required directories with example workload scripts.
+.TP
+.BI "log [" CONFIG-NAME "] [--hz " HZ ]
+Start telemetry logging with optional configuration name. If no name is provided, auto-generates one based on system configuration. Samples at specified frequency (default 1.0 Hz).
+.TP
+.BI "run " WORKLOAD " [" ARGS... ]
+Run specified workload. Should be executed in a separate terminal while logging is active. Available workloads are listed with 'batlab list workloads'.
+.TP
+.B report
+Analyze collected data and display text summary including battery consumption, average power draw, and estimated total battery life.
+.TP
+.B sample
+Collect a single telemetry sample for testing battery data collection on the current system.
+.TP
+.B metadata
+Display system metadata including hostname, OS, kernel version, CPU, and architecture.
+.TP
+.B show-config
+Preview the auto-generated configuration name that would be used for logging based on current system.
+.TP
+.B list workloads
+List available workload scripts in the workload/ directory.
+.TP
+.B --help
+Display usage information and exit.
+.TP
+.B --version
+Display version information and exit.
+.SH WORKFLOW
+The typical research workflow involves:
+.PP
+1. Configure system power management manually (CPU governors, powerd settings, etc.)
+.PP
+2. Start logging in one terminal:
+.nf
+    batlab log freebsd-powerd-aggressive
+.fi
+.PP
+3. Run workload in separate terminal:
+.nf
+    batlab run idle
+.fi
+.PP
+4. Stop both with Ctrl+C when test is complete
+.PP
+5. View results:
+.nf
+    batlab report
+.fi
+.SH DATA FORMAT
+Telemetry data is stored as JSON Lines (JSONL) in the data/ directory:
+.PP
+.nf
+{"t": "2024-01-20T10:30:45.123Z", "pct": 85, "watts": 12.5, "cpu_load": 0.45, "ram_pct": 32.1, "temp_c": 45.2, "src": "acpiconf"}
+.fi
+.PP
+Metadata is stored as JSON:
+.PP
+.nf
+{
+  "config_name": "freebsd-powerd-aggressive",
+  "hostname": "laptop",
+  "os": "FreeBSD",
+  "kernel": "13.2-RELEASE",
+  "cpu": "Intel Core i7-8565U",
+  "machine": "amd64",
+  "start_time": "2024-01-20T10:30:00.000Z",
+  "workload": "idle"
+}
+.fi
+.SH PLATFORM SUPPORT
+.TP
+.B FreeBSD
+Uses acpiconf(8) and sysctl(8) for battery information. Requires ACPI support in kernel.
+.TP
+.B OpenBSD
+Uses apm(8) command for battery status.
+.TP
+.B NetBSD
+Uses envstat(8) for battery and temperature data.
+.TP
+.B Linux
+Prefers upower(1), falls back to /sys/class/power_supply/.
+.TP
+.B macOS
+Uses ioreg(8) and pmset(1) for battery information. Development/testing only.
+.SH FILES
+.TP
+.I data/
+Directory containing telemetry logs (*.jsonl) and metadata (*.meta.json)
+.TP
+.I workload/
+Directory containing workload scripts
+.TP
+.I lib/
+Supporting library files
+.TP
+.I templates/
+HTML report templates
+.SH EXAMPLES
+Initialize and run basic test:
+.nf
+    batlab init
+    batlab log freebsd-default
+    # In another terminal:
+    batlab run idle
+    # Stop both with Ctrl+C, then:
+    batlab report
+.fi
+.PP
+Test battery data collection:
+.nf
+    batlab metadata
+    batlab sample
+.fi
+.PP
+Compare configurations:
+.nf
+    batlab log linux-default
+    batlab run idle
+    # ... later ...
+    batlab log freebsd-powerd
+    batlab run idle
+    batlab report  # Shows comparison
+.fi
+.SH EXIT STATUS
+.B batlab
+exits with status 0 on success, non-zero on error.
+.SH SEE ALSO
+.BR batlab-graph (1),
+.BR batlab-report (1),
+.BR acpiconf (8),
+.BR apm (8),
+.BR envstat (8),
+.BR upower (1),
+.BR sysctl (8)
+.SH AUTHOR
+Written for FreeBSD vs Linux battery life research.
+.SH REPORTING BUGS
+Report bugs to the project repository.

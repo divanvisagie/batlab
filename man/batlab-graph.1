@@ -1,0 +1,168 @@
+.TH BATLAB-GRAPH 1 "2024" "batlab 2.0.0" "Battery Test Harness"
+.SH NAME
+batlab-graph \- generate PNG graphs from batlab data
+.SH SYNOPSIS
+.B batlab-graph
+.RI [ OPTIONS ]
+.br
+.B batlab-graph
+.B --config
+.I CONFIG-NAME
+.br
+.B batlab-graph
+.B --output
+.I FILE
+.br
+.B batlab-graph
+.B --type
+.I GRAPH-TYPE
+.SH DESCRIPTION
+.B batlab-graph
+generates PNG graph images from batlab telemetry data. It creates publication-quality charts showing battery performance, power consumption, and system metrics over time for analysis and presentation.
+
+The tool reads JSONL telemetry files from the data/ directory and produces high-resolution PNG images suitable for research papers, presentations, and documentation.
+.SH OPTIONS
+.TP
+.BI "--config " CONFIG-NAME
+Generate graph for specific configuration name. Required unless using --all.
+.TP
+.BI "--output " FILE
+Specify output PNG file. Default creates files in current directory named after configuration.
+.TP
+.BI "--type " GRAPH-TYPE
+Graph type to generate. Options: battery, power, cpu, temp, all. Default is 'all' (4-panel layout).
+.TP
+.B --all
+Generate graphs for all available test configurations found in the data directory.
+.TP
+.BI "--width " PIXELS
+Image width in pixels. Default is 1200.
+.TP
+.BI "--height " PIXELS
+Image height in pixels. Default is 800.
+.TP
+.BI "--dpi " DPI
+Image resolution in dots per inch. Default is 150 for high-quality output.
+.TP
+.B --no-grid
+Disable grid lines in graphs.
+.TP
+.B --no-legend
+Disable legend in graphs.
+.TP
+.B --title
+.I TITLE
+Custom title for the graph. Default uses configuration name.
+.TP
+.B --verbose
+Enable verbose output showing processing details.
+.TP
+.B --help
+Display usage information and exit.
+.SH GRAPH TYPES
+.TP
+.B battery
+Battery percentage over time with trend line and discharge rate.
+.TP
+.B power
+Power consumption in watts showing instantaneous and average values.
+.TP
+.B cpu
+CPU load percentage correlation with power consumption.
+.TP
+.B temp
+System temperature in Celsius over test duration.
+.TP
+.B all
+Four-panel layout combining all metrics (default).
+.SH OUTPUT FORMAT
+Graphs are generated as high-resolution PNG images with the following characteristics:
+.PP
+.RS
+- 1200x800 pixels at 150 DPI (publication quality)
+- Clean, professional styling suitable for presentations
+- Color-coded time series with clear axis labels
+- Grid lines and legends for easy interpretation
+- Title includes configuration name and test duration
+.RE
+.SH DEPENDENCIES
+.B batlab-graph
+requires the following tools to be available:
+.TP
+.B gnuplot
+For generating publication-quality graphs. Must be compiled with PNG support.
+.TP
+.B awk
+For data processing and calculations.
+.TP
+.B sed
+For text processing and formatting.
+.SH FILES
+.TP
+.I data/*.jsonl
+Telemetry data files (input)
+.TP
+.I data/*.meta.json
+Metadata files (input)
+.TP
+.I *.png
+Generated graph files (output)
+.SH EXAMPLES
+Generate 4-panel graph for specific configuration:
+.nf
+    batlab-graph --config freebsd-powerd-aggressive
+.fi
+.PP
+Generate only battery graph:
+.nf
+    batlab-graph --config linux-default --type battery
+.fi
+.PP
+Custom output file with high DPI:
+.nf
+    batlab-graph --config test-run --output battery-analysis.png --dpi 300
+.fi
+.PP
+Generate graphs for all configurations:
+.nf
+    batlab-graph --all
+.fi
+.PP
+Custom size for presentation:
+.nf
+    batlab-graph --config freebsd-test --width 1920 --height 1080
+.fi
+.SH GRAPH DETAILS
+.TP
+.B Four-Panel Layout
+When using --type all, creates a 2x2 grid showing battery, power, CPU, and temperature in separate panels with synchronized time axes.
+.TP
+.B Time Series Format
+X-axis shows elapsed time from test start. Y-axis scales automatically to data range with appropriate units.
+.TP
+.B Color Scheme
+Uses professional color scheme suitable for both color and grayscale printing.
+.TP
+.B Statistical Annotations
+Includes trend lines, averages, and key statistics overlaid on appropriate graphs.
+.SH TROUBLESHOOTING
+.TP
+.B "gnuplot: command not found"
+Install gnuplot with PNG support: pkg install gnuplot (FreeBSD) or apt install gnuplot (Linux).
+.TP
+.B "No data found"
+Ensure telemetry files exist in data/ directory and configuration name is correct.
+.TP
+.B "Permission denied"
+Check write permissions in output directory.
+.SH EXIT STATUS
+.B batlab-graph
+exits with status 0 on success, non-zero on error.
+.SH SEE ALSO
+.BR batlab (1),
+.BR batlab-report (1),
+.BR gnuplot (1)
+.SH AUTHOR
+Written for FreeBSD vs Linux battery life research.
+.SH REPORTING BUGS
+Report bugs to the project repository.
