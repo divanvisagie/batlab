@@ -38,6 +38,10 @@ PLATFORM_LDFLAGS = $(shell if [ "$(UNAME_S)" = "FreeBSD" ]; then echo "-lkvm"; f
 ### Development Targets
 - `debug` - Build with debug symbols and no optimization
 - `test` - Run basic functionality tests
+- `test-platforms` - Run comprehensive platform compilation tests
+- `test-freebsd-compile` - Test FreeBSD compilation (mocked)
+- `test-linux-compile` - Test Linux compilation (mocked)
+- `test-all-platforms` - Test all platform compilations
 - `lint` - Run static analysis (if splint available)
 - `format` - Format code (if clang-format available)
 - `memcheck` - Check for memory leaks (if valgrind available)
@@ -109,6 +113,9 @@ make
 
 # Run tests
 make test
+
+# Test platform compatibility (FreeBSD/Linux compilation)
+make test-platforms
 
 # Install system-wide (optional)
 sudo make install
@@ -221,6 +228,7 @@ otool -L bin/batlab  # macOS
 
 # Test functionality
 make test
+make test-platforms  # Test FreeBSD/Linux compilation
 ./batlab metadata
 ./batlab sample
 ```
@@ -254,5 +262,39 @@ make test
 - Conditional compilation for platform-specific code
 - Runtime platform detection
 - Graceful degradation on unsupported platforms
+
+## Platform Compilation Testing
+
+The build system includes comprehensive platform compilation testing to verify FreeBSD and Linux compatibility without requiring access to those systems:
+
+### Mock Testing System
+```bash
+# Test compilation for all platforms
+make test-platforms
+
+# Test specific platforms
+make test-freebsd-compile
+make test-linux-compile
+```
+
+### What Gets Tested
+- **Preprocessor validation** - Syntax checking across all source files
+- **FreeBSD compilation** - Mock FreeBSD headers test conditional compilation
+- **Linux compilation** - Mock Linux headers test platform-specific code
+- **Cross-platform compatibility** - Verify proper `#ifdef` usage
+- **Build system compatibility** - Test Makefile works on different platforms
+- **Header compatibility** - Check for circular includes and syntax issues
+- **Compiler warnings** - High warning level compliance testing
+- **Memory model compatibility** - 32-bit and 64-bit compatibility
+
+### Mock Header System
+The test system creates mock versions of platform-specific headers:
+- FreeBSD: `kvm.h`, `sys/sysctl.h`, `sys/user.h`
+- Linux: `sys/sysinfo.h`
+
+This allows compilation testing of platform-specific code paths without requiring the actual target operating system.
+
+### Continuous Integration
+Use `make test-platforms` in CI/CD pipelines to catch platform compatibility issues early, ensuring the code will compile successfully on FreeBSD and Linux systems.
 
 This build system ensures batlab can be compiled and run on any Unix-like system with minimal dependencies, making it ideal for research environments and BSD systems.

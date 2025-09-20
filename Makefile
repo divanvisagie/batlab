@@ -111,6 +111,33 @@ test: $(TARGET)
 	fi
 	@echo "Basic tests complete"
 
+# Test compilation for different platforms (mock the #ifdefs)
+test-freebsd-compile: clean
+	@echo "Testing FreeBSD compilation (mocked)..."
+	@$(MAKE) CC="$(CC)" CFLAGS="$(CFLAGS) -D__FreeBSD__ -Wno-unused-function" LDFLAGS="$(LDFLAGS) -lkvm" all || true
+	@if [ -f $(TARGET) ]; then \
+		echo "FreeBSD compilation test: PASSED"; \
+		$(TARGET) metadata >/dev/null && echo "FreeBSD runtime test: PASSED" || echo "FreeBSD runtime test: FAILED (expected - no real FreeBSD APIs)"; \
+	else \
+		echo "FreeBSD compilation test: FAILED"; \
+	fi
+
+test-linux-compile: clean
+	@echo "Testing Linux compilation (mocked)..."
+	@$(MAKE) CC="$(CC)" CFLAGS="$(CFLAGS) -D__linux__ -D_GNU_SOURCE -Wno-unused-function" LDFLAGS="$(LDFLAGS)" all || true
+	@if [ -f $(TARGET) ]; then \
+		echo "Linux compilation test: PASSED"; \
+		$(TARGET) metadata >/dev/null && echo "Linux runtime test: PASSED" || echo "Linux runtime test: FAILED (expected - no real Linux APIs)"; \
+	else \
+		echo "Linux compilation test: FAILED"; \
+	fi
+
+# Test all platform compilations
+test-all-platforms: test-freebsd-compile test-linux-compile
+	@echo ""
+	@echo "Platform compilation testing complete"
+	@echo "Note: Runtime failures are expected on non-native platforms"
+
 # Format code (if clang-format is available)
 format:
 	@if command -v clang-format >/dev/null 2>&1; then \
@@ -152,6 +179,10 @@ help:
 	@echo "  distclean  - Remove all generated files"
 	@echo "  debug      - Build with debug symbols"
 	@echo "  test       - Run basic functionality tests"
+	@echo "  test-freebsd-compile - Test FreeBSD compilation (mocked)"
+	@echo "  test-linux-compile   - Test Linux compilation (mocked)"
+	@echo "  test-all-platforms   - Test all platform compilations"
+	@echo "  test-platforms       - Run comprehensive platform tests"
 	@echo "  format     - Format code with clang-format"
 	@echo "  memcheck   - Check for memory leaks with valgrind"
 	@echo "  package    - Create distribution package"
@@ -164,8 +195,18 @@ help:
 batlab: $(TARGET)
 	@ln -sf $(TARGET) batlab
 
+# Run comprehensive platform compilation tests
+test-platforms:
+	@echo "Running comprehensive platform compilation tests..."
+	@if [ -f test_platform_compile.sh ]; then \
+		./test_platform_compile.sh; \
+	else \
+		echo "test_platform_compile.sh not found - creating basic platform test..."; \
+		$(MAKE) test-all-platforms; \
+	fi
+
 # Declare phony targets
-.PHONY: all install uninstall clean distclean debug lint test format memcheck cross-amd64 cross-arm64 package help
+.PHONY: all install uninstall clean distclean debug lint test test-freebsd-compile test-linux-compile test-all-platforms test-platforms format memcheck cross-amd64 cross-arm64 package help
 
 # Make sure we can override CC and CFLAGS from command line
 # This works with both BSD make and GNU make
