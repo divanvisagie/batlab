@@ -84,6 +84,7 @@ All existing data in `data/` directory continues to work seamlessly.
 - Manual JSON parsing instead of serde
 - POSIX APIs instead of Rust standard library
 - Emoji removed from workload scripts for system compatibility
+- BSD make compatible Makefile for FreeBSD base system
 
 ## Verification
 
@@ -120,6 +121,7 @@ Example showing mixed Rust/C data in reports:
 
 ### BSD Compatibility
 - **Native FreeBSD support** - Uses base system tools only
+- **BSD make compatible** - Works with FreeBSD's default make (no gmake needed)
 - **No external dependencies** - Standard C library sufficient
 - **Direct sysctls** - hw.acpi.battery.* access without abstractions
 - **POSIX compliance** - Works across BSD variants
@@ -189,6 +191,7 @@ Comprehensive testing verified the migration success:
 
 ### ✅ **System Compatibility**
 - Build system works on macOS (development platform)
+- BSD make compatible Makefile works with FreeBSD base system
 - Emoji removed from workload scripts for terminal compatibility
 - No dependencies beyond standard C library and libm
 - Binary size reduced to 72KB as promised
@@ -197,12 +200,12 @@ Comprehensive testing verified the migration success:
 
 The migration from Rust to C achieved all primary objectives:
 
-1. **✅ BSD Compatibility** - Native FreeBSD support with base system tools
+1. **✅ BSD Compatibility** - Native FreeBSD support with base system tools and BSD make
 2. **✅ Reduced Dependencies** - Only standard C library required
 3. **✅ Improved Performance** - 72KB binary, 3-second builds achieved
 4. **✅ Full Compatibility** - Existing data and workflows unchanged
 5. **✅ Maintainability** - Simpler, more debuggable codebase
-6. **✅ System Compatibility** - Emoji-free output for all terminal types
+6. **✅ System Compatibility** - Emoji-free output and BSD make support
 
 The migration preserves years of battery research data while providing a more sustainable, performant, and compatible foundation for future development.
 

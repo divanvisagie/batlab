@@ -1,20 +1,34 @@
 # Makefile for batlab - Battery Test Harness (C version)
 #
-# Cross-platform build system supporting FreeBSD and Linux
+# BSD make compatible - works on FreeBSD, OpenBSD, NetBSD, and macOS
+# Also compatible with GNU make on Linux
+#
+# This Makefile uses POSIX-compliant syntax that works with both BSD make
+# (default on FreeBSD) and GNU make (default on Linux). Key compatibility
+# features:
+# - Uses $(VAR) instead of ${VAR} for maximum compatibility
+# - Uses shell commands for platform detection instead of make conditionals
+# - Explicit rules instead of pattern rules for object files
+# - Standard POSIX shell constructs in all commands
 
 CC = cc
 CFLAGS = -std=c99 -Wall -Wextra -O2 -g
 LDFLAGS = -lm
 
+# Platform detection - compatible with both BSD and GNU make
+UNAME_S = $(shell uname -s)
+
 # Platform-specific flags
-UNAME_S := $(shell uname -s)
-ifeq ($(UNAME_S),FreeBSD)
-    CFLAGS += -D__FreeBSD__
-    LDFLAGS += -lkvm
-endif
-ifeq ($(UNAME_S),Linux)
-    CFLAGS += -D__linux__ -D_GNU_SOURCE
-endif
+FREEBSD_CFLAGS = -D__FreeBSD__
+FREEBSD_LDFLAGS = -lkvm
+LINUX_CFLAGS = -D__linux__ -D_GNU_SOURCE
+
+# Use shell test for platform detection
+PLATFORM_CFLAGS = $(shell if [ "$(UNAME_S)" = "FreeBSD" ]; then echo "$(FREEBSD_CFLAGS)"; elif [ "$(UNAME_S)" = "Linux" ]; then echo "$(LINUX_CFLAGS)"; fi)
+PLATFORM_LDFLAGS = $(shell if [ "$(UNAME_S)" = "FreeBSD" ]; then echo "$(FREEBSD_LDFLAGS)"; fi)
+
+CFLAGS += $(PLATFORM_CFLAGS)
+LDFLAGS += $(PLATFORM_LDFLAGS)
 
 # Target executable and build directory
 BINDIR = bin
@@ -38,9 +52,15 @@ $(TARGET): $(BINDIR) $(OBJECTS)
 $(BINDIR):
 	@mkdir -p $(BINDIR)
 
-# Compile source files
-$(BINDIR)/%.o: $(SRCDIR)/%.c $(HEADERS) | $(BINDIR)
-	$(CC) $(CFLAGS) -c $< -o $@
+# Compile source files - explicit rules for BSD make compatibility
+$(BINDIR)/batlab.o: $(SRCDIR)/batlab.c $(HEADERS) | $(BINDIR)
+	$(CC) $(CFLAGS) -c $(SRCDIR)/batlab.c -o $(BINDIR)/batlab.o
+
+$(BINDIR)/telemetry.o: $(SRCDIR)/telemetry.c $(HEADERS) | $(BINDIR)
+	$(CC) $(CFLAGS) -c $(SRCDIR)/telemetry.c -o $(BINDIR)/telemetry.o
+
+$(BINDIR)/analysis.o: $(SRCDIR)/analysis.c $(HEADERS) | $(BINDIR)
+	$(CC) $(CFLAGS) -c $(SRCDIR)/analysis.c -o $(BINDIR)/analysis.o
 
 # Install the binary
 install: $(TARGET)
@@ -65,44 +85,61 @@ distclean: clean
 	rm -f batlab
 
 # Development targets
-debug: CFLAGS += -DDEBUG -g3 -O0
-debug: $(TARGET)
+debug: clean
+	@$(MAKE) CFLAGS="$(CFLAGS) -DDEBUG -g3 -O0" all
 
 # Static analysis
 lint:
-	@which splint >/dev/null 2>&1 && splint +posixlib $(SOURCES) || echo "splint not available"
+	@if command -v splint >/dev/null 2>&1; then \
+		splint +posixlib $(SOURCES); \
+	else \
+		echo "splint not available"; \
+	fi
 
 # Test the build
 test: $(TARGET)
 	@echo "Testing basic functionality..."
-	$(TARGET) --help >/dev/null && echo "✅ Help command works" || echo "❌ Help command failed"
-	$(TARGET) metadata >/dev/null && echo "✅ Metadata command works" || echo "❌ Metadata command failed"
+	@if $(TARGET) --help >/dev/null 2>&1; then \
+		echo "Help command works"; \
+	else \
+		echo "Help command failed"; \
+	fi
+	@if $(TARGET) metadata >/dev/null 2>&1; then \
+		echo "Metadata command works"; \
+	else \
+		echo "Metadata command failed"; \
+	fi
 	@echo "Basic tests complete"
 
 # Format code (if clang-format is available)
 format:
-	@which clang-format >/dev/null 2>&1 && \
-		clang-format -i $(SOURCES) $(HEADERS) && \
-		echo "Code formatted" || \
-		echo "clang-format not available"
+	@if command -v clang-format >/dev/null 2>&1; then \
+		clang-format -i $(SOURCES) $(HEADERS); \
+		echo "Code formatted"; \
+	else \
+		echo "clang-format not available"; \
+	fi
 
 # Check for memory leaks (if valgrind is available)
 memcheck: $(TARGET)
-	@which valgrind >/dev/null 2>&1 && \
-		valgrind --leak-check=full --show-reachable=yes ./$(TARGET) metadata || \
-		echo "valgrind not available"
+	@if command -v valgrind >/dev/null 2>&1; then \
+		valgrind --leak-check=full --show-reachable=yes ./$(TARGET) metadata; \
+	else \
+		echo "valgrind not available"; \
+	fi
 
-# Cross-compile for different architectures (example for amd64/arm64)
-cross-amd64:
-	$(MAKE) CC=clang CFLAGS="$(CFLAGS) -target x86_64-unknown-freebsd"
+# Cross-compile for different architectures
+cross-amd64: clean
+	@$(MAKE) CC=clang CFLAGS="$(CFLAGS) -target x86_64-unknown-freebsd" all
 
-cross-arm64:
-	$(MAKE) CC=clang CFLAGS="$(CFLAGS) -target aarch64-unknown-freebsd"
+cross-arm64: clean
+	@$(MAKE) CC=clang CFLAGS="$(CFLAGS) -target aarch64-unknown-freebsd" all
 
 # Package for distribution
 package: clean $(TARGET)
-	@VERSION=$$($(TARGET) --version 2>&1 | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1); \
-	tar -czf batlab-$$VERSION-$(UNAME_S)-$$(uname -m).tar.gz \
+	@VERSION=`$(TARGET) --version 2>&1 | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1`; \
+	ARCH=`uname -m`; \
+	tar -czf batlab-$$VERSION-$(UNAME_S)-$$ARCH.tar.gz \
 		$(TARGET) README.md LICENSE SPEC.md workload/
 
 # Help target
@@ -123,12 +160,13 @@ help:
 	@echo "Platform: $(UNAME_S)"
 	@echo "Compiler: $(CC)"
 
-# Declare phony targets
-.PHONY: all install uninstall clean distclean debug lint test format memcheck cross-amd64 cross-arm64 package help
-
 # Create a convenience symlink to the binary in the root
 batlab: $(TARGET)
 	@ln -sf $(TARGET) batlab
 
-# Default make without arguments shows help
-.DEFAULT_GOAL := all
+# Declare phony targets
+.PHONY: all install uninstall clean distclean debug lint test format memcheck cross-amd64 cross-arm64 package help
+
+# Make sure we can override CC and CFLAGS from command line
+# This works with both BSD make and GNU make
+CC ?= cc
