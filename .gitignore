@@ -20,11 +20,3 @@ Thumbs.db
 # Package files
 *.tar.gz
 *.zip
-
-# Build artifacts
-*.o
-*.so
-*.dylib
-*.exe
-batlab
-bin/batlab
